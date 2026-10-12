@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Enkukador</title>
+<link rel="icon" href="icono.png">
+<link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+<div id="app">
+  <aside id="panel" class="lateral">
+    <header class="cabecera-app">
+      <img src="icono.png" alt="" class="logo"> Enkukador <span id="version"></span>
+      <button id="abrir-actualizar" title="Actualizaciones">⟳</button>
+    </header>
+
+    <section>
+      <label>Lote</label>
+      <div class="fila">
+        <button id="importar" class="primario crece-boton">Importar carpetas…</button>
+        <button id="vaciar" title="Sacar todas las carpetas del lote">Vaciar</button>
+      </div>
+      <ul id="lote"></ul>
+    </section>
+
+    <section>
+      <label>Opciones</label>
+      <div class="opcion">
+        <span>Producto</span>
+        <select id="producto">
+          <option value="alineado">Solo alineado</option>
+          <option value="cnc2">CNC2 (chapa + ID + movimiento)</option>
+          <option value="cnc3">CNC3 (todavía no)</option>
+        </select>
+      </div>
+      <div class="opcion">
+        <span>Encuadre</span>
+        <select id="encuadre">
+          <option value="maxilar">Por maxilar (rápido)</option>
+          <option value="unico">Único (cada modelo)</option>
+        </select>
+      </div>
+      <div class="opcion">
+        <span>Modo</span>
+        <select id="modo">
+          <option value="gh">GH (réplica)</option>
+          <option value="simetria">Simetría</option>
+        </select>
+      </div>
+      <div class="opcion">
+        <span>Tipo</span>
+        <select id="tipo">
+          <option value="auto">Según el nombre</option>
+          <option value="inf">Inferior</option>
+          <option value="sup">Superior</option>
+          <option value="bot">Botones / pasivos</option>
+        </select>
+      </div>
+      <div class="opcion">
+        <label class="check sin-margen"><input id="vaciar" type="checkbox"> Vaciado, pared</label>
+        <input id="espesor" type="number" min="0.8" max="6" step="0.1" value="2" class="corto"> <span class="unidad">mm</span>
+      </div>
+      <label class="check"><input id="plantilla" type="checkbox" checked> Centrar con la plantilla</label>
+      <label class="check"><input id="botones" type="checkbox"> Etapas 0 / 00 / 00b como botones</label>
+      <div class="opcion">
+        <span>Sufijo</span>
+        <input id="sufijo" type="text" placeholder="(ninguno)">
+      </div>
+      <div class="opcion">
+        <span>Salida</span>
+        <input id="salida" type="text" placeholder="como el GH: MODELOS KUKA del caso" spellcheck="false">
+      </div>
+    </section>
+
+    <section class="acciones">
+      <button id="alinear-sel" class="primario">Alinear seleccionados</button>
+      <button id="alinear-todos">Alinear todos</button>
+      <div id="progreso"><div></div></div>
+    </section>
+
+    <section class="crece">
+      <label>Registro</label>
+      <div id="registro"></div>
+    </section>
+  </aside>
+  <div class="divisor" data-panel="panel" data-lado="izq"></div>
+
+  <main id="centro">
+    <canvas id="visor"></canvas>
+    <div id="barra-visor">
+      <span id="titulo-visor">Elegí un modelo en el árbol</span>
+      <span class="grupo-vista">
+        <button data-vista="original">Original</button>
+        <button data-vista="alineado" class="activo">Alineado</button>
+      </span>
+      <button id="encuadrar" title="Encuadrar (F)">Encuadrar</button>
+    </div>
+    <div id="etapas" hidden>
+      <button id="reproducir" title="Recorrer las etapas">▶</button>
+      <input id="slider-etapa" type="range" min="0" max="0" step="0.01" value="0">
+      <span id="etiqueta-etapa"></span>
+    </div>
+    <div id="ayuda">arrastrar: girar · derecho / shift: mover · rueda: zoom · F: encuadrar</div>
+  </main>
+
+  <div class="divisor" data-panel="arbol-panel" data-lado="der"></div>
+  <aside id="arbol-panel" class="lateral">
+    <header>
+      Modelos <span id="contador"></span>
+    </header>
+    <div class="arbol-acciones">
+      <label class="check"><input id="todos" type="checkbox"> todos</label>
+    </div>
+    <div id="arbol"></div>
+    <div id="detalle"></div>
+  </aside>
+</div>
+<dialog id="actualizador">
+  <form method="dialog">
+    <header>Actualizaciones</header>
+    <div id="act-estado">Consultando…</div>
+    <ul id="act-lista"></ul>
+    <footer>
+      <button type="button" id="act-revertir">Volver a la anterior</button>
+      <span class="crece-boton"></span>
+      <button value="cerrar">Cerrar</button>
+    </footer>
+  </form>
+</dialog>
+<dialog id="explorador">
+  <form method="dialog">
+    <header>Importar carpetas</header>
+    <div class="fila">
+      <button type="button" id="exp-subir" title="Carpeta de arriba">↑</button>
+      <input id="exp-ruta" type="text" spellcheck="false">
+      <button type="button" id="exp-ir">Ir</button>
+    </div>
+    <ul id="exp-lista"></ul>
+    <footer>
+      <span id="exp-info"></span>
+      <button type="button" id="exp-agregar" class="primario">Agregar esta carpeta</button>
+      <button value="cerrar">Listo</button>
+    </footer>
+  </form>
+</dialog>
+<script src="visor.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

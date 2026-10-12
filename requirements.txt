@@ -1,0 +1,14 @@
+# Lo que necesita el programa. Las versiones exactas que van al instalador de Windows
+# están en packaging/build_win.sh: si cambiás algo acá, cambialo allá.
+numpy>=2.0
+scipy>=1.13
+trimesh>=4.5
+shapely>=2.0
+networkx>=3.0
+rtree>=1.0
+manifold3d>=3.0
+matplotlib>=3.8
+scikit-image>=0.22
+pillow>=10
+# el ícono en la bandeja del sistema, solo en Windows
+pystray>=0.19; sys_platform == "win32"

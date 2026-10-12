@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "enkukador"
+version = "1.0.0"
+description = "Alineación de modelos de arcadas: base plana sobre XY y arco orientado (reemplazo de Modelos planos V5.06.02 de Grasshopper)"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "scipy",
+    "trimesh",
+    "shapely>=2",
+    "networkx",
+    "rtree",      # trimesh lo usa para resolver contornos con huecos en los cortes
+    "manifold3d", # extrusiones cerradas (chapa CNC2)
+    "matplotlib", # contornos de texto (TextPath) para el ID y el movimiento
+    "scikit-image", # marching cubes del vaciado
+    "pillow",     # rasterizado de cortes del vaciado
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "mapbox-earcut"]  # earcut: extrude_polygon en los tests
+
+[project.scripts]
+enkukador = "enkukador.cli:main"
+enkukador-desalinear = "enkukador.desalinear:main"
+
+[tool.setuptools]
+packages = ["enkukador", "enkukador.ui"]
+
+[tool.setuptools.package-data]
+"enkukador" = ["datos/*"]
+"enkukador.ui" = ["estatico/*"]
+
+[tool.ruff]
+line-length = 100

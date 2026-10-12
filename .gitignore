@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.claude/scratch/
+# modelos de prueba y salidas
+*.stl
+# datos de pacientes y salidas: nunca al repo
+*.ply
+*.obj
+*.3dm
+*.pts
+*.aligned
+packaging/build/
