@@ -19,6 +19,7 @@ import json
 import os
 import re
 import shutil
+import ssl
 import tarfile
 import time
 import urllib.request
@@ -51,14 +52,29 @@ def marca() -> dict:
         return {}
 
 
+def contexto_ssl() -> ssl.SSLContext:
+    """Valida HTTPS con los certificados del sistema operativo (truststore).
+
+    El Python que trae el instalador usa su propia lista de certificados. En las
+    PCs con antivirus o proxy que inspeccionan HTTPS, esos programas presentan su
+    propio certificado, que está en el almacén de Windows pero no en esa lista:
+    resultado, CERTIFICATE_VERIFY_FAILED. truststore usa el almacén del sistema,
+    como el navegador. Sin truststore se usa la validación de siempre.
+    """
+    try:
+        import truststore
+    except ImportError:
+        return ssl.create_default_context()
+    return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+
+
 def _pedir(url: str, timeout: float = 20) -> bytes:
     cabeceras = {"User-Agent": "enkukador", "Accept": "application/vnd.github+json"}
     token = os.environ.get("ENKUKADOR_GITHUB_TOKEN")  # solo si el repo pasa a privado
     if token:
         cabeceras["Authorization"] = f"Bearer {token}"
-    with urllib.request.urlopen(
-        urllib.request.Request(url, headers=cabeceras), timeout=timeout
-    ) as r:
+    pedido = urllib.request.Request(url, headers=cabeceras)
+    with urllib.request.urlopen(pedido, timeout=timeout, context=contexto_ssl()) as r:
         return r.read()
 
 

@@ -18,6 +18,7 @@ dependencies = [
     "matplotlib", # contornos de texto (TextPath) para el ID y el movimiento
     "scikit-image", # marching cubes del vaciado
     "pillow",     # rasterizado de cortes del vaciado
+    "truststore", # el actualizador valida HTTPS con los certificados del sistema
 ]
 
 [project.optional-dependencies]

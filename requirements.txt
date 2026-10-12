@@ -10,5 +10,7 @@ manifold3d>=3.0
 matplotlib>=3.8
 scikit-image>=0.22
 pillow>=10
+# HTTPS del actualizador con los certificados del sistema (antivirus/proxy con inspección)
+truststore>=0.9
 # el ícono en la bandeja del sistema, solo en Windows
 pystray>=0.19; sys_platform == "win32"

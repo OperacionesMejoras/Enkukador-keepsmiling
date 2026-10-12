@@ -89,3 +89,13 @@ def test_explorar_y_cnc2(servidor, tmp_path):
         f"{servidor}/api/alinear", {"ruta": ruta, "producto": "cnc3", "salida": str(tmp_path / "o")}
     )
     assert any("CNC3" in a for a in r3["avisos"])
+
+
+def test_actualizador_usa_certificados_del_sistema():
+    """Con antivirus o proxy que inspeccionan HTTPS, la lista propia de Python
+    falla (CERTIFICATE_VERIFY_FAILED): hay que validar con el sistema."""
+    import truststore
+
+    from enkukador import actualizar
+
+    assert isinstance(actualizar.contexto_ssl(), truststore.SSLContext)

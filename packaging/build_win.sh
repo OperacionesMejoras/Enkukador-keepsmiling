@@ -23,7 +23,7 @@ PYTHON="${PYTHON:-python3}"            # el Python del que arma: necesita pip y 
 PAQUETES=(
   "numpy==2.5.4" "scipy==1.18.1" "trimesh==5.1.1" "shapely==2.2.0" "networkx==3.7"
   "rtree==1.4.1" "manifold3d==3.5.4" "matplotlib==3.11.2" "scikit-image==0.26.0"
-  "pillow==12.3.0" "pystray==0.19.5"
+  "pillow==12.3.0" "pystray==0.19.5" "truststore==0.10.4"
 )
 
 rm -rf "$BUILD"
