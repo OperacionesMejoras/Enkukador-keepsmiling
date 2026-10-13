@@ -217,16 +217,23 @@ def test_aligned_vuelve_al_original_exacto(tmp_path):
     assert np.abs(np.sort(vuelto.vertices, 0) - np.sort(orig.vertices, 0)).max() < 1e-3
 
 
-def test_vaciado_sin_booleanas():
+def test_vaciado_cosido():
     from enkukador import hueco
 
     m = alinear(mover(arcada(radio=22.0, ancho=10, alto=14), 0), "inf").malla
-    v = hueco.vaciar(m, 2.0, paso=0.25)
-    piezas = sorted(v.split(only_watertight=False), key=lambda p: -abs(p.volume))
-    assert len(piezas) == 2 and piezas[1].volume < 0, "cavidad invertida aparte"
-    assert piezas[1].is_watertight
-    assert v.bounds[0][2] > -1e-3, "nada por debajo de la cama"
-    assert piezas[1].bounds[0][2] == pytest.approx(0, abs=1e-3), "abierto por la base"
+    solido = hueco.unir(m)
+    v = hueco.coser(solido, hueco.cavidad(solido, 2.0, paso=0.4))  # sin el plan B
+    assert v.is_watertight and v.body_count == 1, "una sola malla cerrada"
+    assert 0 < v.volume < 0.6 * m.volume
+    assert v.bounds[0][2] > -1e-6, "nada por debajo de la cama"
+    piso = v.area_faces[(v.face_normals[:, 2] < -0.99) & (v.triangles_center[:, 2] < 1e-3)].sum()
+    base = m.area_faces[(m.face_normals[:, 2] < -0.99) & (m.triangles_center[:, 2] < 1e-3)].sum()
+    assert piso < 0.6 * base, "abierto por la base"
+    # la superficie exterior no se toca: todos sus vértices fuera de la base siguen ahí
+    from scipy.spatial import cKDTree
+
+    arriba = m.vertices[m.vertices[:, 2] > 1e-3]
+    assert cKDTree(v.vertices).query(arriba)[0].max() < 1e-9
 
 
 def test_vaciado_liso_pared_pareja():
@@ -248,11 +255,11 @@ def test_vaciado_une_las_piezas(tmp_path):
     frente = m.vertices[np.argmax(m.vertices[:, 1])]  # incisivos: el punto más adelante
     raiz = trimesh.creation.cylinder(radius=2.0, height=10.0)
     raiz.apply_translation([frente[0], frente[1] - 5.0, 8.0])  # en medio de la pared
-    v = hueco.vaciar(trimesh.util.concatenate([m, raiz]), 2.0, paso=0.25)
-    piezas = v.split(only_watertight=False)
-    assert len(piezas) == 2, "unión + cavidad, sin la raíz aparte"
-    assert sum(p.volume < 0 for p in piezas) == 1
-    # Releído del STL (float32) siguen siendo dos cuerpos cerrados, sin astillas.
+    v = hueco.vaciar(trimesh.util.concatenate([m, raiz]), 2.0)
+    assert v.body_count == 1, "sin la raíz aparte"
+    hueco_solo = hueco.vaciar(m, 2.0)
+    assert v.volume == pytest.approx(hueco_solo.volume, rel=0.02), "la raíz no queda maciza"
+    # Releído del STL (float32) sigue siendo una malla cerrada, sin astillas.
     v.export(tmp_path / "v.stl")
-    releido = trimesh.load(tmp_path / "v.stl").split(only_watertight=False)
-    assert len(releido) == 2 and all(p.is_watertight for p in releido)
+    releido = trimesh.load(tmp_path / "v.stl")
+    assert releido.body_count == 1 and releido.is_watertight

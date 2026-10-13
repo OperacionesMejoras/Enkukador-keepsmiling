@@ -1,9 +1,10 @@
-"""Vaciado (cascarón) sin booleanas: cavidad invertida concatenada al modelo.
+"""Vaciado (cascarón) por costura: superficie exterior + interior, sin booleanas.
 
-Como «Modelos huecos» del GH: no se resta nada. Se calcula la cavidad (el
-interior que queda a más de `espesor` mm de la superficie), se invierten sus
-normales y se agrega al mismo STL. El slicer suma los dos cuerpos con su
-orientación y la cavidad queda vacía.
+Se unen todas las piezas en un sólido, se calcula la cavidad (el interior que
+queda a más de `espesor` mm de la superficie) y se arma una sola malla cerrada:
+la superficie exterior sin su base, la de la cavidad sin su tapa (invertida) y
+un anillo en z=0 que cose los dos bordes. No se toca un solo vértice de la
+superficie exterior. Si los bordes no cierran limpio, se resta con manifold3d.
 
 La cavidad sale de un campo de distancia (método de KeepModelReferencer/
 ahuecar.py, ya medido ahí): voxelizado por rebanadas, transformada de distancia
@@ -235,16 +236,108 @@ def unir(malla: trimesh.Trimesh) -> trimesh.Trimesh:
     return unida
 
 
+def _lazos(malla: trimesh.Trimesh) -> list[np.ndarray]:
+    """Bordes abiertos de la malla como lazos de índices de vértices, en orden."""
+    e = malla.edges[trimesh.grouping.group_rows(malla.edges_sorted, require_count=1)]
+    siguiente = dict(map(tuple, e))
+    if len(siguiente) != len(e):
+        raise ValueError("borde con vértices repetidos")
+    lazos, vistos = [], set()
+    for a in siguiente:
+        if a in vistos:
+            continue
+        lazo, b = [a], siguiente[a]
+        vistos.add(a)
+        while b != a:
+            lazo.append(b)
+            vistos.add(b)
+            b = siguiente[b]
+        lazos.append(np.array(lazo))
+    return lazos
+
+
+def _sin_z0(malla: trimesh.Trimesh, tol: float = 1e-4) -> trimesh.Trimesh:
+    """La malla sin las caras apoyadas en z=0, con ese borde exacto en z=0."""
+    m = malla.copy()
+    m.update_faces(np.abs(m.triangles[:, :, 2]).max(axis=1) > tol)
+    m.remove_unreferenced_vertices()
+    m.vertices[np.abs(m.vertices[:, 2]) <= tol, 2] = 0.0
+    return m
+
+
+def coser(solido: trimesh.Trimesh, hueco: trimesh.Trimesh) -> trimesh.Trimesh:
+    """Sólido hueco de una sola malla: exterior sin base + interior sin tapa + anillo.
+
+    El anillo es la base que queda entre el contorno exterior y la boca de la
+    cavidad, triangulado (Delaunay restringido) solo con los vértices de esos
+    dos bordes, así se suelda sin vértices nuevos.
+    """
+    import shapely
+    from scipy.spatial import cKDTree
+    from shapely.geometry import Polygon
+
+    ext = _sin_z0(solido)
+    inn = _sin_z0(hueco)
+    inn.invert()  # la superficie interior mira hacia la cavidad
+    V = np.vstack([ext.vertices, inn.vertices])
+    lazos = _lazos(ext) + [l + len(ext.vertices) for l in _lazos(inn)]
+    if any(np.abs(V[l, 2]).max() > 0 for l in lazos):
+        raise ValueError("un borde abierto no está en z=0")
+    # Regla par-impar: los lazos anidados alternan entre piso y abertura.
+    piso = shapely.Polygon()
+    for l in lazos:
+        piso = piso.symmetric_difference(Polygon(V[l, :2]))
+    puntos = np.vstack([V[l, :2] for l in lazos])
+    indices = np.concatenate(lazos)
+    arbol = cKDTree(puntos)
+    caras = []
+    for t in shapely.constrained_delaunay_triangles(piso).geoms:
+        c = np.array(t.exterior.coords)[:3]
+        d, k = arbol.query(c)
+        if d.max() > 1e-9:
+            raise ValueError("la triangulación del anillo agregó vértices")
+        u, w = c[1] - c[0], c[2] - c[0]
+        f = indices[k]
+        caras.append(f if u[0] * w[1] - u[1] * w[0] < 0 else f[[0, 2, 1]])  # normal -Z
+    F = np.vstack([ext.faces, inn.faces + len(ext.vertices), caras])
+    malla = trimesh.Trimesh(V, F, process=False)
+    malla.merge_vertices()
+    if not (malla.is_watertight and malla.is_winding_consistent and malla.volume > 0):
+        raise ValueError("la costura no quedó cerrada")
+    return malla
+
+
+def _restar(solido: trimesh.Trimesh, hueco: trimesh.Trimesh) -> trimesh.Trimesh:
+    """Plan B de la costura: sólido - cavidad con manifold3d (la cavidad baja
+    0,5 mm por debajo de z=0 para no dejar caras coplanares)."""
+    import manifold3d as mf
+
+    h = hueco.copy()
+    h.vertices[np.abs(h.vertices[:, 2]) < 1e-4, 2] = -0.5
+    a, b = (
+        mf.Manifold(mf.Mesh(np.asarray(m.vertices, np.float32), np.asarray(m.faces, np.uint32)))
+        for m in (solido, h)
+    )
+    r = (a - b).to_mesh()
+    return trimesh.Trimesh(r.vert_properties[:, :3], r.tri_verts)
+
+
 def vaciar(
-    malla: trimesh.Trimesh, espesor: float = 2.0, paso: float = 0.2, liso: bool = True
+    malla: trimesh.Trimesh, espesor: float = 2.0, paso: float = 0.4, liso: bool = True
 ) -> trimesh.Trimesh:
-    """Piezas unidas + su cavidad invertida, concatenadas (sin restar la cavidad).
+    """Sólido hueco, abierto por la base, en una sola malla cerrada.
 
     Se vacía la unión de todas las piezas, no solo la encía: así el hueco pasa
     también por las raíces de los dientes. La salida lleva la unión en lugar de
     las piezas originales.
+
+    `paso` es la grilla de la superficie interior, que nadie ve: con 0,4 la
+    pared sale de 1,75 a 1,88 mm para 1,8 (p0,1-p99) en ~3 s; con 0,2, de 1,78
+    a 1,83 en ~11 s.
     """
     solido = unir(malla)
     hueco = cavidad(solido, espesor, paso, liso)
-    hueco.invert()  # Mesh Flip: volumen negativo = vacío para el slicer
-    return trimesh.util.concatenate([solido, hueco])
+    try:
+        return coser(solido, hueco)
+    except ValueError:
+        return _restar(solido, hueco)
