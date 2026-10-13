@@ -82,7 +82,7 @@ de los paneles.
 | Opción | Qué hace |
 |---|---|
 | `--producto alineado\|cnc2\|cnc3` | `cnc2` agrega la chapa (2 mm, ID y movimiento calados, Liberation Sans Bold = Arial Bold, 2,3 mm), las ranuras de los extractores (invertidas) y la marca de orientación, todo concatenado sin booleanas, con sufijo ` CNC2`. Medido contra salidas reales (AP962): mismas piezas, chapa a ±0,3 mm. `cnc3` todavía no hace nada (exporta el alineado y avisa). |
-| `--vaciado MM` | Vacía el modelo dejando esa pared (ej. 2), abierto por la base. Sin booleanas: la cavidad va invertida en el mismo STL, como «Modelos huecos» del GH. Medido en BN595: pared de 2,00 mm (mediana), 49% menos material, ~3,5 s por modelo. |
+| `--vaciado MM` | Vacía el modelo dejando esa pared (ej. 2), abierto por la base. Sin booleanas: la cavidad va invertida en el mismo STL, como «Modelos huecos» del GH. La pared sale lisa: distancia exacta a la superficie cerca del nivel, marching cubes interpolado y Taubin (no los escalones de un umbral binario). Medido en BZ219-L05-A con 1,8 mm: pared de 1,78 a 1,82 mm (p1–p99; antes 1,57 a 1,99), ~5 s por modelo. |
 | `--encuadre maxilar` *(por defecto)* | Los originales de un maxilar vienen superpuestos en la misma ubicación: se alinea la primera etapa (00 o la más baja) y esa misma matriz se aplica al resto, por separado para inf y sup. Igual al modo único (≤ 0,09 mm en BN595) y todas las etapas quedan en el mismo marco. Si alguna no comparte la ubicación (su base no cae en z=0), avisa. |
 | `--encuadre unico` | Cada modelo se alinea por separado. |
 | `--modo gh` *(por defecto)* | Réplica del GH. El giro fino lo amortigua el objetivo *Direction* de Kangaroo (ver abajo). |

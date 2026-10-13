@@ -227,3 +227,14 @@ def test_vaciado_sin_booleanas():
     assert piezas[1].is_watertight
     assert v.bounds[0][2] > -1e-3, "nada por debajo de la cama"
     assert piezas[1].bounds[0][2] == pytest.approx(0, abs=1e-3), "abierto por la base"
+
+
+def test_vaciado_liso_pared_pareja():
+    from enkukador import hueco
+
+    m = alinear(mover(arcada(radio=22.0, ancho=10, alto=14), 0), "inf").malla
+    c = hueco.cavidad(m, 2.0, paso=0.25)
+    assert c.is_watertight
+    pts = c.vertices[c.vertices[:, 2] > 0.5]
+    d = hueco._distancia_exacta(m, pts)
+    assert np.percentile(d, 1) > 1.85 and np.percentile(d, 99) < 2.1, "sin escalones de vóxel"
