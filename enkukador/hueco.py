@@ -55,20 +55,50 @@ def _voxelizar(malla: trimesh.Trimesh, paso: float):
     return vol, np.array([x0, y0, z0 + paso])
 
 
-def _distancia_exacta(malla: trimesh.Trimesh, puntos: np.ndarray, vecinos: int = 16) -> np.ndarray:
-    """Distancia de cada punto a la superficie, sin contar la base plana (z=0, normal -Z).
+def _sin_base(malla: trimesh.Trimesh) -> np.ndarray:
+    """Triángulos de la superficie sin la base plana (z=0, normal -Z).
 
-    Candidatos por KD-tree de centroides y distancia exacta punto-triángulo. La
-    base no cuenta: el modelo se trata como extruido hacia abajo, así la
+    La base no cuenta: el modelo se trata como extruido hacia abajo, así la
     cavidad llega hasta z=0.
+    """
+    base = (malla.face_normals[:, 2] < -0.99) & (malla.triangles_center[:, 2] < 0.05)
+    return malla.triangles[~base]
+
+
+def _a_la_base(puntos: np.ndarray) -> np.ndarray:
+    p = puntos.copy()
+    p[:, 2] = np.maximum(p[:, 2], 0.0)  # lo replicado por debajo mide como en z=0
+    return p
+
+
+def _distancia_aprox(
+    malla: trimesh.Trimesh, puntos: np.ndarray, hasta: float, sep: float = 0.2
+) -> np.ndarray:
+    """Distancia a una muestra densa de la superficie (sobreestima < 0,02 mm a 1,8 mm).
+
+    Guía para elegir dónde calcular la distancia exacta. No sirve la EDT del
+    volumen binario: las ranuras finas (entre dientes, bajo las coronas) quedan
+    llenas en la grilla y la EDT las ignora. Más lejos que `hasta` devuelve
+    `hasta` (buscar lejos en el KD-tree es lo caro).
     """
     from scipy.spatial import cKDTree
 
-    base = (malla.face_normals[:, 2] < -0.99) & (malla.triangles_center[:, 2] < 0.05)
-    tris = malla.triangles[~base]
+    tris = _sin_base(malla)
+    n = int(trimesh.triangles.area(tris).sum() / sep**2)
+    sub = trimesh.Trimesh(tris.reshape(-1, 3), np.arange(len(tris) * 3).reshape(-1, 3), process=False)
+    muestra = np.vstack([sub.sample(n, seed=0), tris.reshape(-1, 3)])
+    d = cKDTree(muestra).query(_a_la_base(puntos), workers=-1, distance_upper_bound=hasta)[0]
+    return np.minimum(d, hasta)
+
+
+def _distancia_exacta(malla: trimesh.Trimesh, puntos: np.ndarray, vecinos: int = 16) -> np.ndarray:
+    """Distancia de cada punto a la superficie sin la base: candidatos por
+    KD-tree de centroides y distancia exacta punto-triángulo."""
+    from scipy.spatial import cKDTree
+
+    tris = _sin_base(malla)
     arbol = cKDTree(tris.mean(axis=1))
-    p = puntos.copy()
-    p[:, 2] = np.maximum(p[:, 2], 0.0)  # lo replicado por debajo mide como en z=0
+    p = _a_la_base(puntos)
     k = min(vecinos, len(tris))
     dist = np.empty(len(p))
     for i in range(0, len(p), 40000):
@@ -86,8 +116,8 @@ def cavidad(
 ) -> trimesh.Trimesh:
     """Interior a más de `espesor` mm de la superficie, cerrado y con normales hacia afuera.
 
-    liso=True: el campo de distancia es exacto cerca de la pared (banda de
-    ±2 pasos) y marching cubes interpola el cruce, más un suavizado de Taubin.
+    liso=True: el campo de distancia es exacto cerca de la pared (los cubos
+    que cruzan el nivel) y marching cubes interpola el cruce, más un suavizado de Taubin.
     Sale sin escalones de vóxel. liso=False: el método anterior (umbral binario
     sobre la EDT), con escalones de `paso`.
     """
@@ -103,21 +133,34 @@ def cavidad(
     vol = np.concatenate([np.repeat(vol[:, :, :1], relleno, axis=2), vol], axis=2)
     origen = origen - np.array([0.0, 0.0, relleno * paso])
 
-    edt = ndimage.distance_transform_edt(vol, sampling=(paso,) * 3)
-    if not (edt > umbral).any():
-        raise ValueError(f"con {espesor} mm de pared no queda cavidad: el modelo es más fino")
-
     if liso:
-        # La EDT de un volumen binario mide a centros de vóxel: sirve de guía, no
-        # de superficie. Cerca del nivel se reemplaza por la distancia real.
-        campo = edt.astype(np.float32)
-        banda = vol & (np.abs(edt - umbral) < 2.0 * paso)
-        ijk = np.argwhere(banda)
-        campo[banda] = _distancia_exacta(malla, ijk * paso + origen)
+        # Adentro: distancia a una muestra densa de la superficie y, cerca del
+        # nivel, la distancia exacta. Afuera queda en 0.
+        # Primero en una grilla del doble de paso: como la distancia cambia a lo
+        # sumo lo que uno se mueve, los vóxeles a más de √3·paso por encima de
+        # la banda no hace falta medirlos (más de la mitad del volumen).
+        hasta = umbral + 4 * paso
+        grueso = vol[::2, ::2, ::2]
+        dg = np.zeros(grueso.shape, np.float32)  # afuera = 0: lo de al lado se mide
+        ijk = np.argwhere(grueso)
+        dg[tuple(ijk.T)] = _distancia_aprox(malla, 2 * ijk * paso + origen, hasta)
+        idx = [np.minimum((np.arange(n) + 1) // 2, m - 1) for n, m in zip(vol.shape, dg.shape)]
+        campo = dg[np.ix_(*idx)]
+        campo[~vol] = 0.0
+        medir = vol & (campo < umbral + 2 * np.sqrt(3) * paso)
+        ijk = np.argwhere(medir)
+        aprox = _distancia_aprox(malla, ijk * paso + origen, hasta)
+        cerca = np.abs(aprox - umbral) < np.sqrt(3) * paso  # cubos que cruzan el nivel
+        aprox[cerca] = _distancia_exacta(malla, ijk[cerca] * paso + origen)
+        campo[tuple(ijk.T)] = aprox
         nivel = umbral
     else:
-        campo = (edt > umbral).astype(np.float32)
+        campo = (ndimage.distance_transform_edt(vol, sampling=(paso,) * 3) > umbral).astype(
+            np.float32
+        )
         nivel = 0.5
+    if not (campo > nivel).any():
+        raise ValueError(f"con {espesor} mm de pared no queda cavidad: el modelo es más fino")
     campo = np.pad(campo, 1, constant_values=0.0)  # que marching cubes la cierre
     origen = origen - paso
 
@@ -150,17 +193,50 @@ def _taubin_con_tapa_fija(malla: trimesh.Trimesh, iteraciones: int = 10) -> None
     malla.vertices = v
 
 
+def unir(malla: trimesh.Trimesh) -> trimesh.Trimesh:
+    """Une las piezas sueltas (encía, dientes, attachments) en un solo sólido.
+
+    Hace falta antes de vaciar: si la cavidad se concatena a las piezas sueltas,
+    las raíces de los dientes quedan macizas dentro del hueco (el slicer suma
+    encía +1, diente +1 y cavidad -1). Unión de manifold3d: cada pieza tiene que
+    ser cerrada; si alguna no lo es, se intenta repararla y si no, error.
+    """
+    import manifold3d as mf
+
+    piezas = malla.split(only_watertight=False)
+    if len(piezas) <= 1:
+        return malla
+    solidos = []
+    for p in piezas:
+        if not p.is_watertight:
+            p = p.copy()
+            p.merge_vertices()
+            p.fill_holes()
+        if p.volume < 0:
+            p.invert()
+        m = mf.Manifold(
+            mf.Mesh(np.asarray(p.vertices, np.float32), np.asarray(p.faces, np.uint32))
+        )
+        if m.status() != mf.Error.NoError:
+            raise ValueError(f"una pieza no es cerrada ({m.status()}): no se puede unir para vaciar")
+        solidos.append(m)
+    salida = mf.Manifold.batch_boolean(solidos, mf.OpType.Add).to_mesh()
+    unida = trimesh.Trimesh(salida.vert_properties[:, :3], salida.tri_verts, process=True)
+    if not unida.is_watertight:
+        raise ValueError("la unión de las piezas no quedó cerrada: no se puede vaciar")
+    return unida
+
+
 def vaciar(
     malla: trimesh.Trimesh, espesor: float = 2.0, paso: float = 0.2, liso: bool = True
 ) -> trimesh.Trimesh:
-    """Modelo + su cavidad invertida, concatenados (sin booleanas)."""
-    from .base import pieza_principal
+    """Piezas unidas + su cavidad invertida, concatenadas (sin restar la cavidad).
 
-    solido = pieza_principal(malla)
-    if not solido.is_watertight:
-        solido = solido.copy()
-        solido.merge_vertices()
-        solido.fill_holes()
+    Se vacía la unión de todas las piezas, no solo la encía: así el hueco pasa
+    también por las raíces de los dientes. La salida lleva la unión en lugar de
+    las piezas originales.
+    """
+    solido = unir(malla)
     hueco = cavidad(solido, espesor, paso, liso)
     hueco.invert()  # Mesh Flip: volumen negativo = vacío para el slicer
-    return trimesh.util.concatenate([malla, hueco])
+    return trimesh.util.concatenate([solido, hueco])

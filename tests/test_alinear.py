@@ -238,3 +238,17 @@ def test_vaciado_liso_pared_pareja():
     pts = c.vertices[c.vertices[:, 2] > 0.5]
     d = hueco._distancia_exacta(m, pts)
     assert np.percentile(d, 1) > 1.85 and np.percentile(d, 99) < 2.1, "sin escalones de vóxel"
+
+
+def test_vaciado_une_las_piezas():
+    """Una «raíz» suelta dentro de la encía se une antes de vaciar: no queda maciza."""
+    from enkukador import hueco
+
+    m = alinear(mover(arcada(radio=22.0, ancho=10, alto=14), 0), "inf").malla
+    frente = m.vertices[np.argmax(m.vertices[:, 1])]  # incisivos: el punto más adelante
+    raiz = trimesh.creation.cylinder(radius=2.0, height=10.0)
+    raiz.apply_translation([frente[0], frente[1] - 5.0, 8.0])  # en medio de la pared
+    v = hueco.vaciar(trimesh.util.concatenate([m, raiz]), 2.0, paso=0.25)
+    piezas = v.split(only_watertight=False)
+    assert len(piezas) == 2, "unión + cavidad, sin la raíz aparte"
+    assert sum(p.volume < 0 for p in piezas) == 1
