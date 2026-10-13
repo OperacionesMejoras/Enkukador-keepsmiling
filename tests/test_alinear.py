@@ -240,7 +240,7 @@ def test_vaciado_liso_pared_pareja():
     assert np.percentile(d, 1) > 1.85 and np.percentile(d, 99) < 2.1, "sin escalones de vóxel"
 
 
-def test_vaciado_une_las_piezas():
+def test_vaciado_une_las_piezas(tmp_path):
     """Una «raíz» suelta dentro de la encía se une antes de vaciar: no queda maciza."""
     from enkukador import hueco
 
@@ -252,3 +252,7 @@ def test_vaciado_une_las_piezas():
     piezas = v.split(only_watertight=False)
     assert len(piezas) == 2, "unión + cavidad, sin la raíz aparte"
     assert sum(p.volume < 0 for p in piezas) == 1
+    # Releído del STL (float32) siguen siendo dos cuerpos cerrados, sin astillas.
+    v.export(tmp_path / "v.stl")
+    releido = trimesh.load(tmp_path / "v.stl").split(only_watertight=False)
+    assert len(releido) == 2 and all(p.is_watertight for p in releido)

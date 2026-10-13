@@ -177,6 +177,13 @@ def cavidad(
         hueco.invert()
     if liso:
         _taubin_con_tapa_fija(hueco)
+    # El corte deja vértices casi coincidentes en el borde de la tapa: el STL
+    # (float32) los junta y quedan triángulos sin área que al releer aparecen
+    # como cientos de piezas sueltas. Se redondea a float32 y se limpia acá.
+    hueco.vertices = hueco.vertices.astype(np.float32).astype(np.float64)
+    hueco.merge_vertices(digits_vertex=5)
+    hueco.update_faces(hueco.nondegenerate_faces(height=1e-7))
+    hueco.remove_unreferenced_vertices()
     return hueco
 
 
