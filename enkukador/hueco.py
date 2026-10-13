@@ -182,7 +182,8 @@ def cavidad(
     # como cientos de piezas sueltas. Se redondea a float32 y se limpia acá.
     hueco.vertices = hueco.vertices.astype(np.float32).astype(np.float64)
     hueco.merge_vertices(digits_vertex=5)
-    hueco.update_faces(hueco.nondegenerate_faces(height=1e-7))
+    f = hueco.faces  # solo los de vértice repetido: sacar los finitos abriría agujeros
+    hueco.update_faces((f[:, 0] != f[:, 1]) & (f[:, 1] != f[:, 2]) & (f[:, 0] != f[:, 2]))
     hueco.remove_unreferenced_vertices()
     return hueco
 
