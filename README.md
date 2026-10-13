@@ -196,5 +196,9 @@ de tamaño fijo no apoya bien (aviso «la plantilla quedó lejos de la curva»).
 modelo, referencia y demás piezas: como el GH concatenaba en lugar de hacer
 booleanas, cada cosa es un cuerpo aparte.
 
+`tools/toothform_referencias.py` mide la base que agrega ToothFORM (agujeros
+del robot, llave, placa, QR, que lee) y, con la entrada, cómo la orienta. Ver
+[docs/TOOTHFORM_REFERENCIAS.md](docs/TOOTHFORM_REFERENCIAS.md).
+
 `tools/gh_a_xml.py` convierte un `.gh` a XML (como un `.ghx`) sin Rhino,
 expandiendo los clusters. Así se leyó el programa original.
