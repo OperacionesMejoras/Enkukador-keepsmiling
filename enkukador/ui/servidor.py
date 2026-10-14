@@ -27,7 +27,7 @@ from urllib.parse import parse_qs, urlparse
 import numpy as np
 import trimesh
 
-from .. import __version__, actualizar, cnc2, exportar, hueco, maxilar, nombres
+from .. import __version__, actualizar, cnc2, exportar, hueco, maxilar, nombres, toothform
 from ..alinear import alinear
 from ..cli import EXTENSIONES, _cargar, _resumen
 from ..plantilla import PLANTILLA
@@ -145,7 +145,47 @@ def listar(carpeta: str, botones: bool = False) -> dict:
     return {"carpeta": str(c), "modelos": modelos}
 
 
+def toothform_uno(datos: dict) -> dict:
+    """Producto toothform: lo de ToothFORM en <salida>/<ID>/ (pieza, -gum.stl,
+    -tooth.ply, -MatA.txt). Usa su propio marco; encuadre, modo y tipo no
+    cuentan. El espesor del vaciado, si se marca, es ShellThickness."""
+    ruta = Path(datos["ruta"])
+    caso, _, modelo = ruta.stem.partition("-")
+    p = toothform.Parametros()
+    espesor = float(datos.get("vaciado") or 0)
+    if espesor > 0:
+        p.ShellThickness = espesor
+    try:
+        r = toothform.generar(_cargar(ruta), caso, modelo or ruta.stem, p)
+    except toothform.FallaToothform as e:
+        raise ValueError(f"{e.estado}: {e.detalle}") from e
+    if r.estado not in toothform.EXPORTADOS:
+        raise ValueError(f"{r.estado}: {'; '.join(r.avisos)}")
+    salida = Path(datos["salida"]) if datos.get("salida") else ruta.parent / "toothform"
+    rutas = toothform.exportar(r, salida / caso, ruta.stem)
+    avisos = list(r.avisos)
+    if r.estado != toothform.EXPORTO:
+        avisos.insert(0, r.estado)
+    estado = "aviso" if avisos else "ok"
+    with _candado:
+        _resultados[str(ruta)] = {
+            "estado": estado, "matriz": r.matriz, "curva": None, "plantilla": False,
+            "destino": str(rutas[0]),
+        }
+    holgura = "" if r.holgura_qr in (None, float("inf")) else f" | pasillo QR {r.holgura_qr:.2f} mm"
+    return {
+        "ruta": str(ruta),
+        "tipo": "inf" if modelo[:1].upper() == "L" else "sup",
+        "estado": estado,
+        "destino": str(rutas[0]),
+        "resumen": f"ToothFORM: {r.estado} | QR «{caso}{modelo.replace('-', '')}»{holgura}",
+        "avisos": avisos,
+    }
+
+
 def alinear_uno(datos: dict) -> dict:
+    if datos.get("producto") == "toothform":
+        return toothform_uno(datos)
     ruta = Path(datos["ruta"])
     tipo = datos.get("tipo") or "auto"
     if tipo == "auto":
@@ -250,7 +290,7 @@ def triangulos(ruta: str, vista: str) -> bytes:
         previo = _resultados.get(ruta)
         if previo is None:
             raise ValueError("ese modelo todavía no se alineó")
-        if previo.get("destino"):  # CNC2: mostrar el STL generado, con la chapa
+        if previo.get("destino"):  # CNC2 / toothform: mostrar el STL generado
             m = trimesh.load(previo["destino"], force="mesh")
         else:
             m.apply_transform(previo["matriz"])

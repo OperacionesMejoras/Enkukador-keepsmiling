@@ -99,3 +99,18 @@ def test_actualizador_usa_certificados_del_sistema():
     from enkukador import actualizar
 
     assert isinstance(actualizar.contexto_ssl(), truststore.SSLContext)
+
+
+def test_toothform_desde_la_interfaz(servidor, tmp_path):
+    from test_alinear import _arcada_con_dientes
+
+    caso = tmp_path / "entrada"
+    caso.mkdir()
+    _arcada_con_dientes().export(caso / "AB123-L05-A.stl")
+    ruta = str(caso / "AB123-L05-A.stl")
+    r = post(f"{servidor}/api/alinear", {"ruta": ruta, "producto": "toothform", "salida": str(tmp_path / "o")})
+    assert r["destino"].endswith("AB123-L05-A.stl") and "AB123L05A" in r["resumen"]
+    hechos = sorted(x.name for x in (tmp_path / "o" / "AB123").iterdir())
+    assert hechos == ["AB123-L05-A-MatA.txt", "AB123-L05-A-gum.stl", "AB123-L05-A-tooth.ply", "AB123-L05-A.stl"]
+    tri = np.frombuffer(get(f"{servidor}/api/malla?ruta={quote(ruta)}&vista=alineado"), "<f4")
+    assert tri.size > 0
