@@ -102,6 +102,13 @@ button.activo { background: var(--acento); border-color: var(--acento); color: #
   max-height: 40%; overflow: auto; color: var(--tenue); white-space: pre-wrap; }
 #detalle:empty { display: none; }
 #detalle b { color: var(--texto); }
+#detalle .ident { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; white-space: normal;
+  margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--borde); }
+#detalle .ident b { flex-basis: 100%; }
+#detalle .ident label { display: flex; align-items: center; gap: 4px; }
+#detalle .ident input { width: 7em; }
+#detalle .ident > div { flex-basis: 100%; }
+#detalle .ident .error { color: var(--error); }
 
 .crece-boton { flex: 1; }
 #lote { list-style: none; margin: 8px 0 0; padding: 0; max-height: 140px; overflow: auto; }
@@ -146,3 +153,6 @@ dialog#actualizador footer { display: flex; gap: 8px; }
 #act-lista li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--borde); }
 #act-lista li .titulo { flex: 1; }
 #act-lista li .fecha { color: var(--tenue); font-size: 12px; }
+
+.opcion[hidden] { display: none; }
+.hoja .exportado { color: var(--ok); font-size: 11px; }

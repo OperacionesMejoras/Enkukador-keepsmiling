@@ -38,23 +38,30 @@ def exportar_stl(malla: trimesh.Trimesh, destino: Path) -> Path:
 CARPETA_GH = "MODELOS KUKA"
 CARPETA_BACKUP = "Backup originales"
 SUFIJOS = {"alineado": "", "cnc2": " CNC2", "cnc3": " CNC3"}
+# Subcarpeta junto al caso cuando no se elige una carpeta de salida.
+SUBCARPETAS = {"alineado": "planos", "toothform": "toothform"}
 
 
 def destino_gh(
-    original: Path, producto: str, salida: Path | None = None, sufijo: str | None = None
+    original: Path,
+    producto: str,
+    salida: Path | None = None,
+    sufijo: str | None = None,
+    subcarpeta: str | None = None,
 ) -> Path:
     """Ruta de salida como la armaba el GH.
 
     `<caso> stl/MODELOS KUKA/<nombre original> CNC2.stl`. Si los originales
     están dentro de `Backup originales`, la carpeta del caso es la de arriba.
-    Con `salida` se usa esa carpeta, con el mismo nombre de archivo.
+    Con `salida` se usa esa carpeta, con el mismo nombre de archivo; con
+    `subcarpeta`, esa en vez de la del GH dentro de la carpeta del caso.
     """
     original = Path(original)
     if salida is None:
         caso = original.parent
         if caso.name.lower() == CARPETA_BACKUP.lower():
             caso = caso.parent
-        salida = caso / (CARPETA_GH if producto != "alineado" else "planos")
+        salida = caso / (subcarpeta or SUBCARPETAS.get(producto, CARPETA_GH))
     sufijo = SUFIJOS.get(producto, "") if sufijo in (None, "") else sufijo
     return Path(salida) / f"{original.stem}{sufijo}.stl"
 

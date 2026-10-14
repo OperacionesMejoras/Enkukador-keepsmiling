@@ -3,7 +3,7 @@
 
 const $ = (s) => document.querySelector(s);
 const visor = new Visor($("#visor"));
-const estado = { lote: [], modelos: [], prefijos: {}, elegido: null, vista: "alineado", trabajando: false };
+const estado = { lote: [], modelos: [], prefijos: {}, elegido: null, vista: "alineado", trabajando: false, subcarpetas: {} };
 const GRUPOS = [["inf", "Inferiores"], ["sup", "Superiores"], ["bot", "Botones / pasivos"], [null, "Sin tipo"]];
 
 // --- preferencias del navegador (paneles, opciones, última carpeta) ---
@@ -12,7 +12,8 @@ function guardar() {
   try {
     localStorage.setItem("enkukador", JSON.stringify({
       explorador: estado.explorador, panel: $("#panel").style.width, arbol: $("#arbol-panel").style.width,
-      opciones: Object.fromEntries(["producto", "encuadre", "modo", "tipo", "sufijo", "salida", "espesor"].map((k) => [k, $("#" + k).value])),
+      opciones: Object.fromEntries(["producto", "encuadre", "modo", "tipo", "sufijo", "salida", "espesor", "destino"].map((k) => [k, $("#" + k).value])),
+      subcarpetas: estado.subcarpetas,
       checks: Object.fromEntries(["plantilla", "botones", "vaciar"].map((k) => [k, $("#" + k).checked])),
     }));
   } catch { /* sin almacenamiento: no pasa nada */ }
@@ -21,6 +22,7 @@ if (guardado.panel) $("#panel").style.width = guardado.panel;
 if (guardado.arbol) $("#arbol-panel").style.width = guardado.arbol;
 for (const [k, v] of Object.entries(guardado.opciones || {})) $("#" + k).value = v;
 for (const [k, v] of Object.entries(guardado.checks || {})) $("#" + k).checked = v;
+estado.subcarpetas = guardado.subcarpetas || {};
 document.querySelectorAll("input, select").forEach((el) => el.addEventListener("change", guardar));
 
 // --- paneles agrandables ---
@@ -101,7 +103,7 @@ function dibujarLote() {
   }
 }
 
-$("#vaciar").onclick = () => [...estado.lote].forEach(quitarCarpeta);
+$("#vaciar-lote").onclick = () => [...estado.lote].forEach(quitarCarpeta);
 
 // --- diálogo de importar ---
 async function explorar(ruta) {
@@ -113,7 +115,7 @@ async function explorar(ruta) {
     $("#exp-subir").disabled = !r.padre;
     $("#exp-subir").onclick = () => explorar(r.padre);
     $("#exp-info").textContent = r.modelos ? `${r.modelos} modelos en esta carpeta` : "esta carpeta no tiene modelos";
-    $("#exp-agregar").disabled = !r.modelos;
+    $("#exp-agregar").disabled = estado.alElegir ? false : !r.modelos;
     const ul = $("#exp-lista");
     ul.textContent = "";
     for (const c of r.carpetas) {
@@ -122,7 +124,7 @@ async function explorar(ruta) {
       n.className = "nombre";
       n.textContent = "📁 " + c.nombre;
       li.append(n);
-      if (c.modelos) {
+      if (c.modelos && !estado.alElegir) {
         const k = document.createElement("span");
         k.className = "cuenta";
         k.textContent = `${c.modelos} modelos`;
@@ -137,10 +139,82 @@ async function explorar(ruta) {
     }
   } catch (e) { log(e.message, "error"); }
 }
-$("#importar").onclick = () => { $("#explorador").showModal(); explorar(estado.explorador); };
+function abrirExplorador(alElegir, desde) {
+  estado.alElegir = alElegir; // null: importar; función: elegir una carpeta
+  $("#exp-titulo").textContent = alElegir ? "Elegir la carpeta de salida" : "Importar carpetas";
+  $("#exp-agregar").textContent = alElegir ? "Usar esta carpeta" : "Agregar esta carpeta";
+  $("#explorador").showModal();
+  explorar(desde || estado.explorador);
+}
+$("#importar").onclick = () => abrirExplorador(null);
+$("#explorador").addEventListener("close", () => { const f = estado.alElegir; estado.alElegir = null; f?.(null); });
 $("#exp-ir").onclick = () => explorar($("#exp-ruta").value.trim());
 $("#exp-ruta").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); explorar(e.target.value.trim()); } });
-$("#exp-agregar").onclick = () => agregarCarpeta($("#exp-ruta").value.trim());
+$("#exp-agregar").onclick = () => {
+  const ruta = $("#exp-ruta").value.trim();
+  if (!estado.alElegir) return agregarCarpeta(ruta);
+  const f = estado.alElegir;
+  estado.alElegir = null;
+  $("#explorador").close();
+  f(ruta);
+};
+
+// --- exportar: carpeta elegida o subcarpeta junto a cada caso ---
+const SUBCARPETA = { alineado: "planos", cnc2: "MODELOS KUKA", cnc3: "MODELOS KUKA", toothform: "toothform" };
+const subcarpeta = (producto) => estado.subcarpetas[producto] || SUBCARPETA[producto];
+function mostrarDestino() {
+  const caso = $("#destino").value === "caso";
+  $("#fila-salida").hidden = caso;
+  $("#fila-subcarpeta").hidden = !caso;
+  $("#subcarpeta").value = subcarpeta($("#producto").value);
+}
+$("#destino").addEventListener("change", mostrarDestino);
+$("#producto").addEventListener("change", mostrarDestino);
+$("#subcarpeta").addEventListener("change", (e) => {
+  const v = e.target.value.trim();
+  if (v && v !== SUBCARPETA[$("#producto").value]) estado.subcarpetas[$("#producto").value] = v;
+  else delete estado.subcarpetas[$("#producto").value];
+  mostrarDestino();
+  guardar();
+});
+const elegirSalida = () => new Promise((listo) => abrirExplorador((ruta) => {
+  if (ruta) { $("#salida").value = ruta; guardar(); }
+  listo(ruta);
+}, $("#salida").value.trim() || estado.explorador));
+$("#elegir-salida").onclick = elegirSalida;
+mostrarDestino();
+
+async function exportarLista() {
+  if (estado.trabajando) return;
+  const hechos = estado.modelos.filter(alineado);
+  const marcados = hechos.filter((m) => m.marcado);
+  const lista = marcados.length ? marcados : hechos;
+  if (!lista.length) return log("No hay modelos alineados para exportar", "aviso");
+  const opciones = { salida: "", subcarpeta: "" };
+  if ($("#destino").value === "carpeta") {
+    if (!$("#salida").value.trim() && !(await elegirSalida())) return log("Exportar: no se eligió carpeta", "aviso");
+    opciones.salida = $("#salida").value.trim();
+  }
+  estado.trabajando = true;
+  document.querySelectorAll(".acciones button").forEach((b) => (b.disabled = true));
+  let ok = 0;
+  for (const m of lista) {
+    try {
+      const r = await (await api("/api/exportar", {
+        ruta: m.ruta, ...opciones, subcarpeta: opciones.salida ? "" : subcarpeta(m.producto || $("#producto").value),
+      })).json();
+      m.exportado = r.destino;
+      ok++;
+      log(`↓ ${r.destino}`, "ok");
+    } catch (e) { log(`✗ exportar ${m.nombre}: ${e.message}`, "error"); }
+    if (estado.elegido === m) mostrarDetalle(m);
+  }
+  dibujarArbol();
+  log(`Exportados: ${ok}/${lista.length}`);
+  estado.trabajando = false;
+  document.querySelectorAll(".acciones button").forEach((b) => (b.disabled = false));
+}
+$("#exportar").onclick = exportarLista;
 
 // --- árbol: caso (carpeta) > inferiores / superiores > etapas ---
 // Prefijo común de los nombres (caso y paciente), para mostrar solo lo que cambia.
@@ -204,6 +278,13 @@ function hoja(m) {
   n.textContent = corto(m);
   n.title = m.ruta;
   h.append(chk, p, n);
+  if (m.exportado) {
+    const x = document.createElement("span");
+    x.className = "exportado";
+    x.textContent = "↓";
+    x.title = `exportado: ${m.exportado}`;
+    h.append(x);
+  }
   h.onclick = () => elegir(m);
   return h;
 }
@@ -343,8 +424,68 @@ function mostrarDetalle(m) {
   d.append(b, `\ntipo: ${m.tipo ?? "?"} · estado: ${m.estado}`);
   if (m.resumen) d.append(`\n\n${m.resumen.replaceAll(" | ", "\n")}`);
   if (m.avisos?.length) d.append(`\n\nAVISOS:\n${m.avisos.join("\n")}`);
-  if (m.destino) d.append(`\n\n→ ${m.destino}`);
+  if (alineado(m)) d.append(m.exportado ? `\n\nexportado → ${m.exportado}` : "\n\nsin exportar");
+  const e = editorIdent(m);
+  if (e) d.append(e);
 }
+
+// --- lo que se graba en la pieza (ID del QR en ToothFORM, chapa en CNC2) ---
+// Sale del nombre del archivo; se ve antes de alinear y se puede corregir.
+const IDENT = {
+  toothform: { titulo: "ID para ToothFORM", campos: ["caso", "modelo"] },
+  cnc2: { titulo: "Chapa CNC2", campos: ["ID", "movimiento"] },
+};
+const textoQr = (par) => (par[0] + par[1]).replaceAll("-", "").toUpperCase();
+const qrValido = (par) => /^[0-9A-Z $%*+\-./:]{1,16}$/.test(textoQr(par));
+const identDe = (m, producto) => m.identEditado?.[producto] || m.ident?.[producto];
+
+function problemaIdent(m, producto) {
+  const par = identDe(m, producto);
+  if (!IDENT[producto] || !par) return null;
+  if (!par[0].trim() || !par[1].trim()) return "falta el ID";
+  if (producto === "toothform" && !qrValido(par))
+    return `el QR «${textoQr(par)}» no es válido: hasta 16 caracteres, solo letras, números, espacio y .-$%*+/:`;
+  return null;
+}
+
+function editorIdent(m) {
+  const producto = $("#producto").value, conf = IDENT[producto], par = identDe(m, producto);
+  if (!conf || !par) return null;
+  const caja = document.createElement("div");
+  caja.className = "ident";
+  const t = document.createElement("b");
+  t.textContent = conf.titulo;
+  const nota = document.createElement("div");
+  const actualizar = () => {
+    const p = identDe(m, producto), mal = problemaIdent(m, producto);
+    nota.className = mal ? "error" : "";
+    nota.textContent = mal || (producto === "toothform"
+      ? `QR: ${textoQr(p)} · texto: ${p[0]} / ${p[1]}`
+      : `chapa: ${p[0]} · movimiento: ${p[1]}`);
+  };
+  const entradas = conf.campos.map((nombre, i) => {
+    const l = document.createElement("label");
+    const inp = document.createElement("input");
+    inp.value = par[i];
+    inp.oninput = () => {
+      const nuevo = [...identDe(m, producto)];
+      nuevo[i] = inp.value.trim();
+      (m.identEditado ||= {})[producto] = nuevo;
+      actualizar();
+    };
+    l.append(nombre, inp);
+    return l;
+  });
+  const volver = document.createElement("button");
+  volver.type = "button";
+  volver.textContent = "del nombre";
+  volver.title = "Volver a lo que sale del nombre del archivo";
+  volver.onclick = () => { if (m.identEditado) delete m.identEditado[producto]; mostrarDetalle(m); };
+  caja.append(t, ...entradas, volver, nota);
+  actualizar();
+  return caja;
+}
+$("#producto").addEventListener("change", () => estado.elegido && mostrarDetalle(estado.elegido));
 
 document.querySelectorAll("[data-vista]").forEach((b) =>
   b.addEventListener("click", async () => { estado.vista = b.dataset.vista; await cargarVista(); prepararEtapas(); }));
@@ -361,17 +502,25 @@ async function alinearLista(lista) {
   const barra = $("#progreso > div");
   const opciones = {
     producto: $("#producto").value, vaciado: $("#vaciar").checked ? +$("#espesor").value : 0, encuadre: $("#encuadre").value, modo: $("#modo").value, tipo: $("#tipo").value, botones: $("#botones").checked,
-    plantilla: $("#plantilla").checked, sufijo: $("#sufijo").value, salida: $("#salida").value.trim(),
+    plantilla: $("#plantilla").checked, sufijo: $("#sufijo").value,
   };
   log(`Procesando ${lista.length} modelo(s): ${$("#producto").selectedOptions[0].text}, encuadre ${opciones.encuadre}, modo ${opciones.modo}`);
   const t0 = performance.now();
   let hechos = 0;
   for (const m of lista) {
+    const mal = problemaIdent(m, opciones.producto);
+    if (mal) {
+      m.estado = "error";
+      log(`✗ ${m.nombre}: ${mal} (corregilo en el detalle)`, "error");
+      barra.style.width = `${(100 * ++hechos) / lista.length}%`;
+      dibujarArbol();
+      continue;
+    }
     m.estado = "trabajando";
     dibujarArbol();
     try {
-      const r = await (await api("/api/alinear", { ruta: m.ruta, ...opciones })).json();
-      Object.assign(m, { estado: r.estado, resumen: r.resumen, avisos: r.avisos, destino: r.destino, tipo: r.tipo });
+      const r = await (await api("/api/alinear", { ruta: m.ruta, ident: identDe(m, opciones.producto), ...opciones })).json();
+      Object.assign(m, { estado: r.estado, resumen: r.resumen, avisos: r.avisos, tipo: r.tipo, producto: opciones.producto, exportado: null });
       log(`✓ ${m.nombre}`, r.estado === "aviso" ? "aviso" : "ok");
       for (const a of r.avisos) log(`   ${a}`, "aviso");
     } catch (e) {
@@ -400,7 +549,7 @@ $("#alinear-sel").onclick = () => {
 estado.explorador = guardado.explorador;
 dibujarArbol();
 const params = new URLSearchParams(location.search);
-if (params.get("salida")) $("#salida").value = params.get("salida");
+if (params.get("salida")) { $("#salida").value = params.get("salida"); $("#destino").value = "carpeta"; mostrarDestino(); }
 if (params.get("carpeta")) {
   agregarCarpeta(params.get("carpeta")).then(() => {
     const m = estado.modelos.find((x) => x.nombre === params.get("modelo"));

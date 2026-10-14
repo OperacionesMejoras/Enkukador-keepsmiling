@@ -19,7 +19,7 @@
       <label>Lote</label>
       <div class="fila">
         <button id="importar" class="primario crece-boton">Importar carpetas…</button>
-        <button id="vaciar" title="Sacar todas las carpetas del lote">Vaciar</button>
+        <button id="vaciar-lote" title="Sacar todas las carpetas del lote">Vaciar</button>
       </div>
       <ul id="lote"></ul>
     </section>
@@ -68,15 +68,32 @@
         <span>Sufijo</span>
         <input id="sufijo" type="text" placeholder="(ninguno)">
       </div>
+    </section>
+
+    <section>
+      <label>Exportar</label>
       <div class="opcion">
-        <span>Salida</span>
-        <input id="salida" type="text" placeholder="como el GH: MODELOS KUKA del caso" spellcheck="false">
+        <span>Destino</span>
+        <select id="destino">
+          <option value="carpeta">Una carpeta elegida</option>
+          <option value="caso">Junto a cada caso</option>
+        </select>
+      </div>
+      <div class="opcion" id="fila-salida">
+        <span>Carpeta</span>
+        <input id="salida" type="text" placeholder="(sin elegir)" spellcheck="false">
+        <button id="elegir-salida" type="button" title="Elegir la carpeta">Elegir…</button>
+      </div>
+      <div class="opcion" id="fila-subcarpeta">
+        <span>Subcarpeta</span>
+        <input id="subcarpeta" type="text" spellcheck="false">
       </div>
     </section>
 
     <section class="acciones">
       <button id="alinear-sel" class="primario">Alinear seleccionados</button>
       <button id="alinear-todos">Alinear todos</button>
+      <button id="exportar" title="Guarda los modelos alineados (los marcados o, si no hay, todos)">Exportar alineados</button>
       <div id="progreso"><div></div></div>
     </section>
 
@@ -131,7 +148,7 @@
 </dialog>
 <dialog id="explorador">
   <form method="dialog">
-    <header>Importar carpetas</header>
+    <header id="exp-titulo">Importar carpetas</header>
     <div class="fila">
       <button type="button" id="exp-subir" title="Carpeta de arriba">↑</button>
       <input id="exp-ruta" type="text" spellcheck="false">

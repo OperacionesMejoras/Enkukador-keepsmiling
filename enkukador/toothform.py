@@ -27,6 +27,7 @@ plugin (leída con fontTools) y `archivos` se escribe por el port fs.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -307,6 +308,17 @@ def _ubicar_textos(curva: np.ndarray, palabras: tuple[str, str]):
 # ------------------------------------------------------------------ pieza
 
 
+def caso_y_modelo(nombre: str) -> tuple[str, str]:
+    """(caso, modelo) del nombre del archivo: «BZ254-U00-B» → ("BZ254", "U00-B").
+
+    Lo que sigue al primer punto o espacio no es parte del ID («BZ254-U00-B.ENTRADA
+    (1)» es el mismo modelo): el QR solo admite mayúsculas y no le entra más.
+    """
+    ident = re.split(r"[. ]", nombre.strip(), maxsplit=1)[0] or nombre
+    caso, _, modelo = ident.partition("-")
+    return caso, modelo or ident
+
+
 def _qr_modulos(texto_qr: str, lado: float):
     """Módulos del QR (shapely) centrados en el origen, vistos desde arriba.
 
@@ -317,6 +329,9 @@ def _qr_modulos(texto_qr: str, lado: float):
     import segno
     from shapely.geometry import box
 
+    texto_qr = texto_qr.upper()
+    if not re.fullmatch(r"[0-9A-Z $%*+\-./:]{1,16}", texto_qr):
+        raise ValueError(f"el ID «{texto_qr}» no entra en el QR (hasta 16 letras, números o .-$%*+/:)")
     q = segno.make_qr(texto_qr, error="h", version=2, mode="alphanumeric", mask=3,
                       boost_error=False)
     m = np.flipud(np.array(q.matrix, bool))  # = girado 180° + espejado

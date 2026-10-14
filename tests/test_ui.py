@@ -4,6 +4,7 @@ import json
 import threading
 import urllib.request
 from http.server import ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import quote
 
 import numpy as np
@@ -44,12 +45,16 @@ def test_listar_alinear_y_ver(servidor, tmp_path):
     assert [m["tipo"] for m in lista["modelos"]] == ["sup"]
     ruta = lista["modelos"][0]["ruta"]
 
-    r = post(
-        f"{servidor}/api/alinear",
-        {"ruta": ruta, "modo": "simetria", "salida": str(tmp_path / "out")},
-    )
+    r = post(f"{servidor}/api/alinear", {"ruta": ruta, "modo": "simetria"})
     assert r["estado"] in ("ok", "aviso")
+    assert not (caso / "planos").exists(), "alinear no escribe: eso es exportar"
+    e = post(f"{servidor}/api/exportar", {"ruta": ruta, "salida": str(tmp_path / "out")})
+    assert e["destino"] == str(tmp_path / "out" / "0001 Prueba 1.0 sup 01.stl")
     assert (tmp_path / "out" / "0001 Prueba 1.0 sup 01.stl").exists()
+    assert len(e["archivos"]) == 2 and all(Path(a).exists() for a in e["archivos"])  # + .aligned
+    # sin carpeta elegida: la subcarpeta junto al caso
+    e = post(f"{servidor}/api/exportar", {"ruta": ruta, "subcarpeta": "MIS PLANOS"})
+    assert (caso / "MIS PLANOS" / "0001 Prueba 1.0 sup 01.stl").exists()
 
     tri = np.frombuffer(get(f"{servidor}/api/malla?ruta={quote(ruta)}&vista=alineado"), "<f4")
     assert tri.size % 9 == 0
@@ -57,6 +62,12 @@ def test_listar_alinear_y_ver(servidor, tmp_path):
 
     ex = json.loads(get(f"{servidor}/api/extras?ruta={quote(ruta)}"))
     assert len(ex["plantilla"]) == 4 and len(ex["curva"]) > 10
+
+
+def test_exportar_sin_alinear_es_error(servidor, tmp_path):
+    with pytest.raises(urllib.error.HTTPError) as e:
+        post(f"{servidor}/api/exportar", {"ruta": str(tmp_path / "nada.stl")})
+    assert e.value.code == 400
 
 
 def test_pagina_y_errores(servidor):
@@ -78,10 +89,9 @@ def test_explorar_y_cnc2(servidor, tmp_path):
     assert [(c["nombre"], c["modelos"]) for c in ex["carpetas"]] == [("Caso stl", 1)]
 
     ruta = str(caso / "XY001 Caso 1.0 inf 03.stl")
-    r = post(
-        f"{servidor}/api/alinear", {"ruta": ruta, "producto": "cnc2", "salida": str(tmp_path / "o")}
-    )
-    assert r["destino"].endswith("XY001 Caso 1.0 inf 03 CNC2.stl")
+    post(f"{servidor}/api/alinear", {"ruta": ruta, "producto": "cnc2"})
+    e = post(f"{servidor}/api/exportar", {"ruta": ruta})
+    assert e["destino"] == str(caso / "MODELOS KUKA" / "XY001 Caso 1.0 inf 03 CNC2.stl")
     tri = np.frombuffer(get(f"{servidor}/api/malla?ruta={quote(ruta)}&vista=alineado"), "<f4")
     assert tri.size > 0
 
@@ -108,8 +118,10 @@ def test_toothform_desde_la_interfaz(servidor, tmp_path):
     caso.mkdir()
     _arcada_con_dientes().export(caso / "AB123-L05-A.stl")
     ruta = str(caso / "AB123-L05-A.stl")
-    r = post(f"{servidor}/api/alinear", {"ruta": ruta, "producto": "toothform", "salida": str(tmp_path / "o")})
-    assert r["destino"].endswith("AB123-L05-A.stl") and "AB123L05A" in r["resumen"]
+    r = post(f"{servidor}/api/alinear", {"ruta": ruta, "producto": "toothform"})
+    assert "AB123L05A" in r["resumen"]
+    e = post(f"{servidor}/api/exportar", {"ruta": ruta, "salida": str(tmp_path / "o")})
+    assert e["destino"].endswith("AB123-L05-A.stl")
     hechos = sorted(x.name for x in (tmp_path / "o" / "AB123").iterdir())
     assert hechos == ["AB123-L05-A-MatA.txt", "AB123-L05-A-gum.stl", "AB123-L05-A-tooth.ply", "AB123-L05-A.stl"]
     tri = np.frombuffer(get(f"{servidor}/api/malla?ruta={quote(ruta)}&vista=alineado"), "<f4")

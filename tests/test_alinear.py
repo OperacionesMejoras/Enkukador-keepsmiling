@@ -454,3 +454,11 @@ def test_toothform_pasillo_qr_es_el_criterio_de_toothform():
     assert toothform.pasillo_qr(con((2, 10.5, 1), (30, 30, 1), (30, -30, 1)), p) == 2.5
     assert toothform.pasillo_qr(con((2.1, 0, 1), (30, 30, 1), (30, -30, 1)), p) == float("inf")
     assert toothform.pasillo_qr(con((-20, -9, 1), (30, 30, 1), (30, -30, 1)), p) == 1.0
+
+
+def test_toothform_caso_y_modelo_del_nombre():
+    from enkukador import toothform
+
+    assert toothform.caso_y_modelo("BZ254-U00-B") == ("BZ254", "U00-B")
+    assert toothform.caso_y_modelo("BZ254-U00-B.ENTRADA-falla (1)") == ("BZ254", "U00-B")
+    assert toothform.caso_y_modelo("BZ254") == ("BZ254", "BZ254")

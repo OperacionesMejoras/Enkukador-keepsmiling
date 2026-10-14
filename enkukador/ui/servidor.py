@@ -140,29 +140,51 @@ def listar(carpeta: str, botones: bool = False) -> dict:
                     "nombre": p.name,
                     "tipo": nombres.tipo_por_nombre(p, botones),
                     "estado": previo["estado"] if previo else "pendiente",
+                    # lo que se graba en la pieza según el producto; la interfaz
+                    # lo muestra antes de alinear y deja corregirlo
+                    "ident": {
+                        "toothform": list(toothform.caso_y_modelo(p.stem)),
+                        "cnc2": list(cnc2.partes_de_nombre(p)),
+                    },
                 }
             )
     return {"carpeta": str(c), "modelos": modelos}
 
 
+def _ident(datos: dict) -> tuple[str, str] | None:
+    """El par (caso, modelo/movimiento) corregido en la interfaz, si vino."""
+    par = [str(x).strip() for x in datos.get("ident") or []]
+    return (par[0], par[1]) if len(par) == 2 and all(par) else None
+
+
+def _base_salida(ruta: Path, salida: str | None, subcarpeta: str | None, producto: str) -> Path:
+    """Carpeta donde exportar: la elegida o, si no hay, una subcarpeta junto al caso."""
+    if salida:
+        return Path(salida).expanduser()
+    return exportar.destino_gh(ruta, producto, subcarpeta=subcarpeta or None).parent
+
+
 def toothform_uno(datos: dict) -> dict:
-    """Producto toothform: lo de ToothFORM en <salida>/<ID>/ (pieza, -gum.stl,
-    -tooth.ply, -MatA.txt). Usa su propio marco; encuadre, modo y tipo no
-    cuentan. El espesor del vaciado, si se marca, es ShellThickness."""
+    """Producto toothform: arma lo de ToothFORM (pieza, -gum.stl, -tooth.ply,
+    -MatA.txt), que se exporta en <salida>/<ID>/. Usa su propio marco; encuadre,
+    modo y tipo no cuentan. El espesor del vaciado, si se marca, es ShellThickness."""
     ruta = Path(datos["ruta"])
-    caso, _, modelo = ruta.stem.partition("-")
+    caso, modelo = _ident(datos) or toothform.caso_y_modelo(ruta.stem)
     p = toothform.Parametros()
     espesor = float(datos.get("vaciado") or 0)
     if espesor > 0:
         p.ShellThickness = espesor
     try:
-        r = toothform.generar(_cargar(ruta), caso, modelo or ruta.stem, p)
+        r = toothform.generar(_cargar(ruta), caso, modelo, p)
     except toothform.FallaToothform as e:
         raise ValueError(f"{e.estado}: {e.detalle}") from e
     if r.estado not in toothform.EXPORTADOS:
         raise ValueError(f"{r.estado}: {'; '.join(r.avisos)}")
-    salida = Path(datos["salida"]) if datos.get("salida") else ruta.parent / "toothform"
-    rutas = toothform.exportar(r, salida / caso, ruta.stem)
+
+    def escribir(salida: str | None, subcarpeta: str | None) -> list[Path]:
+        base = _base_salida(ruta, salida, subcarpeta, "toothform")
+        return toothform.exportar(r, base / caso, ruta.stem)
+
     avisos = list(r.avisos)
     if r.estado != toothform.EXPORTO:
         avisos.insert(0, r.estado)
@@ -170,14 +192,13 @@ def toothform_uno(datos: dict) -> dict:
     with _candado:
         _resultados[str(ruta)] = {
             "estado": estado, "matriz": r.matriz, "curva": None, "plantilla": False,
-            "destino": str(rutas[0]),
+            "malla": r.pieza, "escribir": escribir, "exportado": None,
         }
     holgura = "" if r.holgura_qr in (None, float("inf")) else f" | pasillo QR {r.holgura_qr:.2f} mm"
     return {
         "ruta": str(ruta),
         "tipo": "inf" if modelo[:1].upper() == "L" else "sup",
         "estado": estado,
-        "destino": str(rutas[0]),
         "resumen": f"ToothFORM: {r.estado} | QR «{caso}{modelo.replace('-', '')}»{holgura}",
         "avisos": avisos,
     }
@@ -219,7 +240,7 @@ def alinear_uno(datos: dict) -> dict:
         malla = hueco.vaciar(malla, espesor)
         resumen += f" | vaciado {espesor:g} mm"
     if producto == "cnc2":
-        id_caso, movimiento = cnc2.partes_de_nombre(ruta)
+        id_caso, movimiento = _ident(datos) or cnc2.partes_de_nombre(ruta)
         malla = cnc2.generar(malla, id_caso, movimiento)
         resumen += f" | CNC2: chapa con «{id_caso}» y «{movimiento}», ranuras y marca"
     elif producto == "cnc3":
@@ -228,19 +249,18 @@ def alinear_uno(datos: dict) -> dict:
             "CNC3 todavía no está hecho: se exportó solo el alineado",
         ]
 
-    salida = Path(datos["salida"]) if datos.get("salida") else None
-    destino = exportar.destino_gh(ruta, producto, salida, datos.get("sufijo"))
-    exportar.exportar_stl(malla, destino)
-    exportar.guardar_aligned(
-        destino,
-        ruta,
-        info["matriz"],
-        tipo=tipo,
-        modo=modo,
-        producto=producto,
-        encuadre=datos.get("encuadre", "unico"),
-        vaciado=espesor,
-    )
+    sufijo = datos.get("sufijo")
+    encuadre = datos.get("encuadre", "unico")
+
+    def escribir(salida: str | None, subcarpeta: str | None) -> list[Path]:
+        base = _base_salida(ruta, salida, subcarpeta, producto)
+        destino = exportar.destino_gh(ruta, producto, base, sufijo)
+        exportar.exportar_stl(malla, destino)
+        aligned = exportar.guardar_aligned(
+            destino, ruta, info["matriz"], tipo=tipo, modo=modo, producto=producto,
+            encuadre=encuadre, vaciado=espesor,
+        )
+        return [destino, aligned]
 
     estado = "aviso" if info["avisos"] else "ok"
     with _candado:
@@ -249,16 +269,27 @@ def alinear_uno(datos: dict) -> dict:
             "matriz": info["matriz"],
             "curva": info["curva"],
             "plantilla": info["plantilla"],
-            "destino": str(destino) if producto == "cnc2" or espesor > 0 else None,
+            "malla": malla, "escribir": escribir, "exportado": None,
         }
     return {
         "ruta": str(ruta),
         "tipo": tipo,
         "estado": estado,
-        "destino": str(destino),
         "resumen": resumen,
         "avisos": info["avisos"],
     }
+
+
+def exportar_uno(datos: dict) -> dict:
+    """Escribe lo que dejó el último alineado de `ruta` (sin volver a calcular)."""
+    ruta = str(Path(datos["ruta"]))
+    previo = _resultados.get(ruta)
+    if previo is None or "escribir" not in previo:
+        raise ValueError("ese modelo todavía no se alineó")
+    rutas = previo["escribir"](datos.get("salida") or None, datos.get("subcarpeta") or None)
+    with _candado:
+        previo["exportado"] = str(rutas[0])
+    return {"ruta": ruta, "destino": str(rutas[0]), "archivos": [str(r) for r in rutas]}
 
 
 def _referencia_maxilar(ruta: Path, tipo: str, modo: str, plantilla: bool, botones: bool) -> dict:
@@ -290,10 +321,7 @@ def triangulos(ruta: str, vista: str) -> bytes:
         previo = _resultados.get(ruta)
         if previo is None:
             raise ValueError("ese modelo todavía no se alineó")
-        if previo.get("destino"):  # CNC2 / toothform: mostrar el STL generado
-            m = trimesh.load(previo["destino"], force="mesh")
-        else:
-            m.apply_transform(previo["matriz"])
+        m = previo["malla"]  # lo que se va a exportar (CNC2, toothform, vaciado)
     else:
         m.apply_translation(-m.bounds.mean(axis=0))
     return np.ascontiguousarray(m.triangles, dtype="<f4").tobytes()
@@ -365,6 +393,8 @@ class Manejador(BaseHTTPRequestHandler):
             ruta = urlparse(self.path).path
             if ruta == "/api/alinear":
                 return self._json(alinear_uno(datos))
+            if ruta == "/api/exportar":
+                return self._json(exportar_uno(datos))
             if ruta == "/api/apagar":
                 self._json({"ok": True})
                 return apagar()

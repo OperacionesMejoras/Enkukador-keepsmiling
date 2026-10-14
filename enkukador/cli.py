@@ -232,9 +232,9 @@ def _toothform(archivos: list[Path], args) -> int:
     salida = args.salida or archivos[0].parent / "toothform"
 
     def uno(ruta: Path) -> tuple[str, list[str]]:
-        caso, _, modelo = ruta.stem.partition("-")
+        caso, modelo = toothform.caso_y_modelo(ruta.stem)
         try:
-            r = toothform.generar(_cargar(ruta), caso, modelo or ruta.stem, params)
+            r = toothform.generar(_cargar(ruta), caso, modelo, params)
             toothform.exportar(r, salida / caso, ruta.stem)
             return r.estado, r.avisos + (
                 [f"pasillo QR {r.holgura_qr:.2f} mm"] if r.holgura_qr not in (None, float("inf")) else []
