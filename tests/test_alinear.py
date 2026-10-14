@@ -311,7 +311,10 @@ def test_toothform_pieza_encia_dientes(tmp_path):
     assert r.encia.bounds[0][2] == pytest.approx(0, abs=1e-6) and not r.encia.is_watertight
     assert r.dientes.body_count == 8 and r.dientes.is_watertight
     rutas = toothform.exportar(r, tmp_path / "AB123", "AB123-L05-A")
-    assert [x.name for x in rutas] == ["AB123-L05-A.stl", "AB123-L05-A-gum.stl", "AB123-L05-A-tooth.ply"]
+    assert [x.name for x in rutas] == [
+        "AB123-L05-A.stl", "AB123-L05-A-gum.stl", "AB123-L05-A-tooth.ply", "AB123-L05-A-MatA.txt"
+    ]
+    assert rutas[3].read_bytes() == b"1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1\r\n" * 2
     assert trimesh.load(rutas[2]).body_count == 8
 
 
@@ -333,3 +336,121 @@ def test_toothform_qr_como_toothform():
     from shapely.geometry import Point
 
     assert "".join("#" if q.contains(Point(c)) else "." for c in centros) == fila
+
+
+# --- traídos de keep-form (workflow-bot-plugins, rama draft, 0.1.9) ---
+
+
+def test_unir_piezas_que_se_tocan_por_una_arista():
+    """BX087 U01/U10/U15, BX059 U02: 'la unión de las piezas no quedó cerrada'.
+    manifold3d la da cerrada; juntar vértices la pellizcaba."""
+    from enkukador import hueco
+
+    a = trimesh.creation.box((10, 10, 10))
+    a.apply_translation([5, 5, 5])
+    b = trimesh.creation.box((4, 4, 10))
+    b.apply_translation([12, 12, 5])  # toca a 'a' sólo por la arista x=10, y=10
+    unida = hueco.unir(trimesh.util.concatenate([a, b]))
+    assert unida.is_watertight
+    assert unida.volume == pytest.approx(1000 + 160)
+
+
+def test_toothform_si_la_costura_falla_usa_el_plan_b(monkeypatch):
+    """BY184 U03-A: 'la costura no quedó cerrada' perdía el modelo."""
+    from enkukador import hueco, toothform
+
+    def costura_rota(*_a, **_k):
+        raise ValueError("la costura no quedó cerrada")
+
+    monkeypatch.setattr(hueco, "coser", costura_rota)
+    r = toothform.generar(_arcada_con_dientes(), "AB123", "L05-A")
+    assert r.estado == toothform.EXPORTO
+    assert r.pieza.is_watertight and r.pieza.body_count == 1
+
+
+def test_toothform_si_no_se_puede_vaciar_sale_maciza(monkeypatch):
+    """'Fail to hollow, changed to solid': ToothFORM la exporta igual."""
+    from enkukador import hueco, toothform
+
+    def sin_cavidad(*_a, **_k):
+        raise RuntimeError("la cavidad no cerró")
+
+    monkeypatch.setattr(hueco, "cavidad", sin_cavidad)
+    r = toothform.generar(_arcada_con_dientes(), "AB123", "L05-A")
+    assert r.estado == toothform.MACIZO
+    assert r.pieza.is_watertight and r.pieza.body_count == 1
+    assert "AB123-L05-A-MatA.txt" in toothform.archivos(r, "AB123-L05-A")
+
+
+def test_toothform_si_fallan_la_placa_o_el_qr_es_failed_to_merge(monkeypatch):
+    from enkukador import toothform
+
+    def qr_roto(*_a, **_k):
+        raise RuntimeError("no se pudo armar el QR")
+
+    monkeypatch.setattr(toothform, "_qr_modulos", qr_roto)
+    with pytest.raises(toothform.FallaToothform) as e:
+        toothform.generar(_arcada_con_dientes(), "AB123", "L05-A")
+    assert e.value.estado == toothform.FALLO_UNION_QR
+
+
+def test_toothform_pasillo_del_qr_es_solo_aviso():
+    from enkukador import toothform
+
+    r = toothform.generar(_arcada_con_dientes(), "AB123", "L05-A", toothform.Parametros(LimitX=10))
+    assert r.estado == toothform.EXPORTO
+    assert any("pasillo de la pinza" in a and "sólo aviso" in a for a in r.avisos)
+
+
+def test_toothform_una_pieza_saca_las_sueltas():
+    from enkukador import toothform
+
+    grande = trimesh.creation.box((10, 10, 10))
+    suelta = trimesh.creation.box((0.1, 0.1, 0.1))
+    suelta.apply_translation([20, 0, 0])
+    pieza, sueltas = toothform.una_pieza(trimesh.util.concatenate([grande, suelta]))
+    assert len(pieza.faces) == len(grande.faces) and pieza.is_watertight and sueltas == (1, 12)
+    assert toothform.una_pieza(grande) == (grande, None)
+
+
+def test_toothform_marco_es_el_de_toothform():
+    """Arcada simétrica, cerrada atrás por una recta: esa recta va paralela a Y,
+    los incisivos a +X, y = 0 en el medio de la arcada, base en z = -0,5 y el
+    frente a QR_FRENTE_X (acá manda la regla del frente)."""
+    from shapely.geometry import Point, box
+
+    from enkukador import arco, toothform
+
+    anillo = Point(0, 0).buffer(27, 256).difference(Point(0, 0).buffer(17, 256))
+    u = anillo.intersection(box(-50, -6, 50, 50))
+    encia = trimesh.creation.extrude_polygon(u.simplify(0.05), 14, engine="manifold")
+    curva = arco.remuestrear_curva(arco.curva_central(arco.contorno_base(encia, 0.5)), 0.5)
+    dientes = []
+    for i in np.linspace(len(curva) * 0.1, len(curva) * 0.9, 8).astype(int):
+        d = trimesh.creation.cylinder(radius=2.5, height=8.0, sections=24)
+        d.apply_translation([curva[i, 0], curva[i, 1], 13.0])
+        dientes.append(d)
+    malla = trimesh.util.concatenate([encia, *dientes])
+    malla.vertices[malla.vertices[:, 2] > 13.9, :2] *= 0.99  # que la base sea la de abajo
+    M, c = toothform.marco(malla)
+    v = malla.copy().apply_transform(M).vertices
+    assert abs(v[:, 2].min() + 0.5) < 1e-6
+    assert abs(v[:, 1].mean()) < 0.05
+    atras = v[v[:, 0] < v[:, 0].min() + 1e-3]
+    assert np.ptp(atras[:, 1]) > 30
+    frente = v[(np.abs(v[:, 1]) < 0.5) & (v[:, 2] < 1.0)]
+    assert abs(frente[:, 0].max() - toothform.QR_FRENTE_X) < 0.05
+
+
+def test_toothform_pasillo_qr_es_el_criterio_de_toothform():
+    """Con QrSize 15: w = 8; ningún vértice en x <= 2 con |y| < 8 + LimitX."""
+    from enkukador import toothform
+
+    p = toothform.Parametros()
+
+    def con(*puntos):
+        return trimesh.Trimesh(np.array(puntos, float), [[0, 1, 2]], process=False)
+
+    assert toothform.pasillo_qr(con((2, 10.5, 1), (30, 30, 1), (30, -30, 1)), p) == 2.5
+    assert toothform.pasillo_qr(con((2.1, 0, 1), (30, 30, 1), (30, -30, 1)), p) == float("inf")
+    assert toothform.pasillo_qr(con((-20, -9, 1), (30, 30, 1), (30, -30, 1)), p) == 1.0

@@ -100,6 +100,9 @@ def main(argv: list[str] | None = None) -> int:
         help="con --producto toothform: el config.json de ToothFORM (usa ParameterSettings)",
     )
     p.add_argument(
+        "--paralelo", type=int, default=1, help="con --producto toothform: modelos a la vez (ej. 4)"
+    )
+    p.add_argument(
         "--vaciado",
         type=float,
         default=0.0,
@@ -214,7 +217,9 @@ if __name__ == "__main__":
 
 def _toothform(archivos: list[Path], args) -> int:
     """Como Toothform.exe por línea de comandos: <salida>/<ID>/<modelo>.stl,
-    -gum.stl y -tooth.ply, y un <fecha>.<hora>.log con el mismo formato."""
+    -gum.stl, -tooth.ply y -MatA.txt, y un <fecha>.<hora>.log con el mismo
+    formato y los mismos estados."""
+    import concurrent.futures
     import json
     import time
 
@@ -225,22 +230,32 @@ def _toothform(archivos: list[Path], args) -> int:
             if k in ajustes:
                 setattr(params, k, float(ajustes[k]))
     salida = args.salida or archivos[0].parent / "toothform"
-    lineas, ok = [], 0
-    for ruta in archivos:
+
+    def uno(ruta: Path) -> tuple[str, list[str]]:
         caso, _, modelo = ruta.stem.partition("-")
         try:
             r = toothform.generar(_cargar(ruta), caso, modelo or ruta.stem, params)
             toothform.exportar(r, salida / caso, ruta.stem)
-            estado = r.estado
-        except Exception as e:  # noqa: BLE001 - un modelo roto no frena el lote
-            estado = "Failed to hollow"
-            print(f"ERROR {ruta.name}: {e}", file=sys.stderr)
-        ok += estado == "Export successfully"
+            return r.estado, r.avisos + (
+                [f"pasillo QR {r.holgura_qr:.2f} mm"] if r.holgura_qr not in (None, float("inf")) else []
+            )
+        except toothform.FallaToothform as e:
+            return e.estado, [e.detalle]
+        except Exception as e:  # noqa: BLE001 - un modelo roto no frena el lote, como en ToothFORM
+            return toothform.FALLO_VACIADO, [f"{type(e).__name__}: {e}"]
+
+    with concurrent.futures.ThreadPoolExecutor(max(1, args.paralelo)) as ejecutor:
+        resultados = list(ejecutor.map(uno, archivos))
+    lineas, ok = [], 0
+    for ruta, (estado, avisos) in zip(archivos, resultados):
+        ok += estado in toothform.EXPORTADOS
         lineas.append(f"{ruta.stem}    {estado}")
         print(lineas[-1])
+        for aviso in avisos:
+            print(f"   {aviso}")
     lineas += ["", f"Total {len(archivos)} models, of which {ok} succeeded and "
                f"{len(archivos) - ok} failed"]
     salida.mkdir(parents=True, exist_ok=True)
-    (salida / time.strftime("%Y%m%d.%H%M%S.log")).write_text("\n".join(lineas) + "\n", encoding="utf-8")
+    (salida / time.strftime("%Y%m%d.%H.%M.%S.log")).write_text("\n".join(lineas) + "\n", encoding="utf-8")
     print(lineas[-1])
     return 0 if ok == len(archivos) else 1

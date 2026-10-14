@@ -27,18 +27,26 @@ error ~1e-13 mm.
   15,310).
 - **Recorta 0,5 mm de abajo**: la base original queda en z = −0,5 y el modelo
   se corta en z = 0.
-- **Orientación** (medido): se toma el contorno del corte (a 0,5 mm de la base
-  original) y su **rectángulo de área mínima** queda alineado con X/Y (ángulo
-  0,000°). El eje de simetría de la arcada queda a 2,0° y el PCA, a entre 7° y
-  11°, así que no son el criterio. Los incisivos quedan hacia **+X**.
+- **Orientación y origen**: es el algoritmo de `Toothform.exe`, leído del
+  binario en el plugin keep-form (workflow-bot-plugins, rama `draft`, 0.1.8) y
+  traído acá. Con BZ219-L05-A y BZ254-U05-A el giro da 0,000° y el origen a
+  0,001 y 0,005 mm del de ToothFORM:
+  1. Plano de la base, Z hacia adentro; se cortan 0,5 mm.
+  2. **Giro**: el lado más largo del casco convexo del contorno de corte (en
+     la U, la recta que la cierra por atrás) queda paralelo a Y; incisivos
+     hacia +X. (El rectángulo de área mínima que se había medido antes da lo
+     mismo en estos dos casos, pero no es el criterio.)
+  3. **Y = 0**: desde el centroide, siete rectas paralelas a Y a 2 mm sobre el
+     corte, cada 2 mm en X; cada una da el punto medio entre las dos paredes
+     más cercanas (si las dos están a 3 mm o más y el medio a menos de 20). El
+     origen es el promedio: el medio de la arcada.
+  4. **X**: el modelo se corre lo máximo entre dejar su frente (en y = 0) en
+     x = 26 y su cara lingual (en y = ±(QrSize+1)/2) en x = 12,5
+     (`IsAutoCutSupportedQr`, Core.dll). El 26 está medido en un solo par
+     (BZ254-L22-A): **a confirmar**.
 - **El superior también se da vuelta** y, si la base viene inclinada respecto
   de la Z del escáner (4,33° en BZ254), la apoya: usa el plano de la base.
-- **Origen**: el centro del QR, que es el agujero R2. **A confirmar** qué lo
-  ubica respecto de la arcada. El punto más anterior de la curva central cae
-  en (21,45; −1,36) y (21,67; −0,64); ningún otro criterio probado (centro del
-  rectángulo, media de dientes, incisivos centrales, simetría) da lo mismo en
-  los dos. El prototipo usa ese punto en (21,56; −1,0): ±0,1 mm en X y ±0,4 mm
-  en Y en estos dos casos.
+- **Origen = centro del QR** = agujero R2.
 
 ## Referencias del robot
 
@@ -70,7 +78,8 @@ medidos).
 - **Qué dice**: el caso en la rama +Y («BZ219», «BZ254») y el modelo en la
   rama −Y («L05-A», «U05-A»), legibles desde abajo (vistos desde arriba están
   espejados).
-- **Fuente: Verdana Bold**, cuerpo 3,44 mm (mayúsculas de 2,5 mm de alto).
+- **Fuente: Verdana Bold**, cuerpo 3,44 mm (mayúsculas de 2,5 mm de alto). Es
+  el `font.ttf` que viene en la carpeta de ToothFORM (confirmado).
   Comparada contra todas las fuentes a mano: Verdana Bold coincide con
   IoU 0,83 y los centros de cada letra a ±0,12 mm; DejaVu Sans Bold (que viene
   con matplotlib) queda segunda con 0,79.
@@ -138,21 +147,37 @@ deja `SALIDA/<ID>/<modelo>.stl`, `-gum.stl` y `-tooth.ply`, y un
 - **Pieza**: unión de todas las piezas, corte en z = 0, hueco cosido
   (`hueco.py`), placa, puentes, macizo alrededor de R1, QR en relieve, y se
   restan R2, R1 con su cono, chaflanes, llave y texto. Una sola malla cerrada.
-- **Límites**: `LimitH` (alto) y `LimitR` (radio desde el QR ≤ `LimitR`/2,
-  **a confirmar** si es diámetro o radio) cortan con `Height limit exceeded` y
-  `Radius limit exceeded`, sin exportar la pieza. El clip no está hecho.
+- **Límites**: `LimitH` (alto) y `LimitR` (diámetro, según el documento de
+  errores del fabricante; medido alrededor del QR) cortan con
+  `Height limit exceeded` y `Radius limit exceeded`, sin exportar la pieza.
+- **Clip (`LimitX`)**: es el pasillo de la pinza hacia el QR (Toothform.exe,
+  leído en keep-form): con w = (QrSize+1)/2, ningún vértice con x ≤ 10 − w
+  puede quedar a |y| < w + LimitX. Separa BZ254-U00-B y U01-A (2,45 y 2,44,
+  rechazados) de U05/U06 (2,51–2,55, aceptados). **Solo avisa** todavía:
+  BZ472-U00-B, rechazado, da 3,49 y eso no lo explica.
+- **Estados del log** con los nombres de ToothFORM: `Export successfully`,
+  `Fail to hollow, changed to solid` (no se pudo vaciar: sale maciza y cuenta
+  como exportado), `Failed to preprocess`, `Failed to hollow`,
+  `Failed to merge`, `Height/Radius limit exceeded`.
+- **Robustez** (de keep-form): la unión no junta vértices (piezas que se
+  tocan por una arista: BX087, BX059); si la costura no cierra, se resta la
+  cavidad con manifold3d (BY184-U03-A); y la pieza queda en un solo cuerpo
+  (las booleanas dejaban pedacitos en 9 de 44 modelos de BZ219).
+- **`-MatA.txt`**: dos identidades 4×4, CRLF, como los 1492 de 2026.
+- `--paralelo N` procesa N modelos a la vez (en una PC con pocos núcleos
+  puede tardar más).
 - **Medido contra ToothFORM** con la misma herramienta (`toothform_referencias.py`):
   mismos niveles (0; 1,0; 2,4; 3,2; 5,71; 6,01), agujeros Ø 4,24 y 5,24 en
   (0, 0) y (20, 0), QR con 0 módulos distintos, mismo alto (18,41 y 18,17).
   Volumen 4 % y 2 % menor (el hueco y las ventanas no son idénticos). Giro
-  igual a ToothFORM (0,000°); el origen queda a 0,36 y 0,52 mm del suyo.
+  igual a ToothFORM (0,000°) y origen a 0,001 y 0,005 mm del suyo.
 - ~8–9 s por modelo.
 
 ## Lo que falta y qué datos sirven
 
-1. **La regla del origen** (y = 0 y la distancia de R1 a la arcada). Hacen
-   falta 20 a 30 pares entrada/salida, con superiores e inferiores, arcadas
-   anchas y angostas y alguna asimétrica. Con eso se corre:
+1. **Confirmar el 26 de la regla del frente** (`QR_FRENTE_X`), la regla de
+   las ventanas y la ubicación exacta del texto. Hacen falta más pares
+   entrada/salida, con superiores e inferiores. Con eso se corre:
 
    ```bash
    python tools/toothform_referencias.py --pares ENTRADAS/ SALIDAS/ > medidas.jsonl
@@ -163,8 +188,8 @@ deja `SALIDA/<ID>/<modelo>.stl`, `-gum.stl` y `-tooth.ply`, y un
 2. **El plano del agarre del robot**, para confirmar tolerancias, el sentido
    de la llave y si R1 es un centrador cónico.
 3. **Una muestra de `-tooth.ply`** de ToothFORM.
-4. **Qué mide `LimitR`** (radio o diámetro, desde dónde) y **qué mide el
-   clip** (`LimitX`).
+4. **El clip en BZ472-U00-B**, que el pasillo del QR no explica, y desde
+   dónde mide ToothFORM el diámetro de `LimitR`.
 5. **Type2 y Type3**.
 6. **Qué hace ToothFORM cuando el QR no entra** (`IsAutoCutSupportedQr`,
    `CreateMeshWithOutQR`).
