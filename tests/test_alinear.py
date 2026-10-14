@@ -263,3 +263,73 @@ def test_vaciado_une_las_piezas(tmp_path):
     v.export(tmp_path / "v.stl")
     releido = trimesh.load(tmp_path / "v.stl")
     assert releido.body_count == 1 and releido.is_watertight
+
+
+def _arcada_con_dientes():
+    m = mover(arcada(radio=22.0, ancho=10, alto=14), 0)
+    r = alinear(m, "inf").malla
+    dientes = []
+    for ang in np.radians(np.linspace(20, 160, 8)):
+        d = trimesh.creation.cylinder(radius=2.5, height=8.0, sections=24)
+        d.apply_translation([0, 0, 13.0])
+        dientes.append(d)
+    # poner los dientes sobre la cresta, en el marco alineado (incisivos hacia +Y)
+    curva = None
+    from enkukador import arco
+
+    poli = arco.contorno_base(r, 0.5)
+    curva = arco.remuestrear_curva(arco.curva_central(poli), 0.5)
+    idx = np.linspace(len(curva) * 0.1, len(curva) * 0.9, len(dientes)).astype(int)
+    for d, i in zip(dientes, idx):
+        d.apply_translation([curva[i, 0], curva[i, 1], 0])
+    return trimesh.util.concatenate([r, *dientes])
+
+
+def test_toothform_pieza_encia_dientes(tmp_path):
+    from enkukador import toothform
+
+    m = _arcada_con_dientes()
+    r = toothform.generar(m, "AB123", "L05-A")
+    assert r.estado == "Export successfully"
+    p = r.pieza
+    assert p.is_watertight and p.body_count == 1
+    assert p.bounds[0][2] == pytest.approx(0, abs=1e-6)
+    # agujeros del robot: R2 en el origen y R1 en (20, 0), con los radios del config
+    corte = p.section([0, 0, 1], [0, 0, 1.5])
+    radios = {}
+    for e in corte.discrete:
+        c = e[:, :2].mean(axis=0)
+        r_med = np.linalg.norm(e[:, :2] - c, axis=1)
+        if r_med.std() < 0.05:
+            radios[tuple(np.round(c))] = r_med.mean()
+    assert radios.get((0.0, 0.0)) == pytest.approx(2.12, abs=0.02)
+    assert radios.get((20.0, 0.0)) == pytest.approx(2.62, abs=0.02)
+    # QR en relieve: lo más alto de la lengüeta está a 3,2
+    lengueta = p.vertices[(np.abs(p.vertices[:, 0]) < 7) & (np.abs(p.vertices[:, 1]) < 7)]
+    assert lengueta[:, 2].max() == pytest.approx(3.2, abs=1e-3)
+    # encía: tapada en z=0, abierta solo donde apoyan los dientes; dientes cerrados
+    assert r.encia.bounds[0][2] == pytest.approx(0, abs=1e-6) and not r.encia.is_watertight
+    assert r.dientes.body_count == 8 and r.dientes.is_watertight
+    rutas = toothform.exportar(r, tmp_path / "AB123", "AB123-L05-A")
+    assert [x.name for x in rutas] == ["AB123-L05-A.stl", "AB123-L05-A-gum.stl", "AB123-L05-A-tooth.ply"]
+    assert trimesh.load(rutas[2]).body_count == 8
+
+
+def test_toothform_limite_de_altura():
+    from enkukador import toothform
+
+    r = toothform.generar(_arcada_con_dientes(), "AB123", "L05-A", toothform.Parametros(LimitH=10))
+    assert r.estado == "Height limit exceeded"
+
+
+def test_toothform_qr_como_toothform():
+    """El QR que arma ToothFORM para BZ219-L05-A (leído de su STL), módulo a módulo."""
+    from enkukador import toothform
+
+    q = toothform._qr_modulos("BZ219L05A", 15.0)
+    # primera fila vista desde arriba (# = módulo en relieve), medida en la salida real
+    fila = "#######...##.##.#....#..#"
+    centros = [(-7.5 + 0.3 + 0.6 * j, 7.5 - 0.3) for j in range(25)]
+    from shapely.geometry import Point
+
+    assert "".join("#" if q.contains(Point(c)) else "." for c in centros) == fila

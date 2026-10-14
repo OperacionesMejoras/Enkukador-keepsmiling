@@ -19,6 +19,7 @@ dependencies = [
     "scikit-image", # marching cubes del vaciado
     "pillow",     # rasterizado de cortes del vaciado
     "truststore", # el actualizador valida HTTPS con los certificados del sistema
+    "segno",      # QR de la salida toothform
 ]
 
 [project.optional-dependencies]

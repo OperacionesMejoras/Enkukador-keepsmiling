@@ -12,5 +12,7 @@ scikit-image>=0.22
 pillow>=10
 # HTTPS del actualizador con los certificados del sistema (antivirus/proxy con inspección)
 truststore>=0.9
+# QR de la salida toothform (puro Python)
+segno>=1.6
 # el ícono en la bandeja del sistema, solo en Windows
 pystray>=0.19; sys_platform == "win32"

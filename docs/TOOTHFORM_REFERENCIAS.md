@@ -1,12 +1,18 @@
 # ToothFORM: referencias del robot y QR (ingeniería inversa)
 
-Medido sobre **un solo par**: BZ219-L05-A (entrada del escáner y salida de
-ToothFORM release 20260518, Type1, con el `config.json` del informe:
-`ShellThickness 1.8`, `BottomPlaneThickness 1.0`, `QrSize 15.0`,
-`Radius1 2.62`, `Radius2 2.12`). Lo que depende de un solo caso está marcado
-como **a confirmar**.
+Medido sobre **dos pares** entrada/salida: BZ219-L05-A (inferior) y
+BZ254-U05-A (superior), con ToothFORM release 20260518, Type1, y el
+`config.json` del informe (`ShellThickness 1.8`, `BottomPlaneThickness 1.0`,
+`QrSize 15.0`, `Radius1 2.62`, `Radius2 2.12`). Todo lo de la base, los
+agujeros, el QR y el texto dio igual en los dos. Lo que no se pudo cerrar está
+marcado como **a confirmar**.
 
-Herramienta: `tools/toothform_referencias.py` (ver al final).
+Las salidas que importan: **la pieza con referencias** se imprime en 3D;
+**`-gum.stl` y `-tooth.ply`** van al proceso que calcula la curva de corte.
+
+Herramienta para medir: `tools/toothform_referencias.py` (ver al final).
+Reproducción: `enkukador/toothform.py`, `--producto toothform` (ver
+«Prototipo»).
 
 ![plano](toothform/plano_referencias.png)
 
@@ -25,12 +31,14 @@ error ~1e-13 mm.
   original) y su **rectángulo de área mínima** queda alineado con X/Y (ángulo
   0,000°). El eje de simetría de la arcada queda a 2,0° y el PCA, a entre 7° y
   11°, así que no son el criterio. Los incisivos quedan hacia **+X**.
-- **Origen** (a confirmar): coincide con el centro del agujero R2. Lo que no
-  se pudo deducir con un caso es qué lo ubica respecto de la arcada:
-  - y = 0: la media de los centroides de los dientes da −0,12 mm (el mejor
-    candidato). El centro del rectángulo mínimo da +4,43, así que no es ese.
-  - x: R1 (x = 20) queda 6,98 mm detrás del punto más anterior del corte y
-    1,4 mm lingual a la curva central (que cruza el eje en x = 21,40).
+- **El superior también se da vuelta** y, si la base viene inclinada respecto
+  de la Z del escáner (4,33° en BZ254), la apoya: usa el plano de la base.
+- **Origen**: el centro del QR, que es el agujero R2. **A confirmar** qué lo
+  ubica respecto de la arcada. El punto más anterior de la curva central cae
+  en (21,45; −1,36) y (21,67; −0,64); ningún otro criterio probado (centro del
+  rectángulo, media de dientes, incisivos centrales, simetría) da lo mismo en
+  los dos. El prototipo usa ese punto en (21,56; −1,0): ±0,1 mm en X y ±0,4 mm
+  en Y en estos dos casos.
 
 ## Referencias del robot
 
@@ -49,12 +57,30 @@ medidos).
 
 - **Placa central** de 2,4 mm (z 0 → 2,4): la lengüeta, de x = −8 a 8,5 e
   y ±8 (16,5 × 16), y un puente bajo los incisivos hasta la pared labial.
-- **Dos puentes de 1,0 mm** (`BottomPlaneThickness`) cruzan la arcada a la
-  altura de premolares y caninos. Llevan el texto **calado de lado a lado**,
-  «BZ219» en uno y «L05-A» en el otro, legible desde abajo.
+- **Dos puentes de 1,0 mm** (`BottomPlaneThickness`) cruzan la arcada, uno
+  en cada rama, de ~14,4 mm de ancho a lo largo de la arcada. Llevan el texto
+  **calado de lado a lado**.
 - **El resto del fondo queda abierto**: cuatro ventanas (dos distales y dos
   laterales anteriores) por las que se ve la cavidad. La pared de 1,8 mm apoya
-  en z = 0.
+  en z = 0. **A confirmar** la regla exacta de los bordes de las ventanas
+  (son rectas que cruzan la arcada).
+
+### Texto
+
+- **Qué dice**: el caso en la rama +Y («BZ219», «BZ254») y el modelo en la
+  rama −Y («L05-A», «U05-A»), legibles desde abajo (vistos desde arriba están
+  espejados).
+- **Fuente: Verdana Bold**, cuerpo 3,44 mm (mayúsculas de 2,5 mm de alto).
+  Comparada contra todas las fuentes a mano: Verdana Bold coincide con
+  IoU 0,83 y los centros de cada letra a ±0,12 mm; DejaVu Sans Bold (que viene
+  con matplotlib) queda segunda con 0,79.
+- **Sin contadores**: la B, el 0, el 9 y la A van rellenos. Como el texto
+  atraviesa el puente, el centro de esas letras quedaría suelto.
+- **Dónde**: centrado sobre la curva central de la arcada (a 0,04–0,2 mm),
+  siguiendo su tangente (±2–5°), al **70 % del largo de su rama** contando
+  desde el frente (0,70; 0,71; 0,70; 0,73). Con eso las letras caen con
+  IoU 0,79–0,84 si se alinean los centros; el corrimiento a lo largo de la
+  curva es de 0,5 a 2 mm (**a confirmar** la regla exacta).
 
 ## QR
 
@@ -79,8 +105,48 @@ segno.make_qr(f"{caso}{modelo}".replace("-", ""), error="h", version=2,
               mode="alphanumeric", mask=3, boost_error=False)
 ```
 
-La máscara 3 puede ser la que eligió el codificador por penalización y no un
-valor fijo. **A confirmar** con otros casos (`modulos_distintos` lo dice).
+En BZ254-U05-A también fue máscara 3 (`BZ254U05A`, 0 diferencias), así que
+todo indica que está fija.
+
+**Aristas no-manifold**: las 43 que tiene la salida de ToothFORM están todas en
+el QR, donde dos módulos se tocan solo por una esquina. El prototipo agranda
+cada módulo 5 µm para que se solapen y la pieza sale cerrada y sin
+no-manifold.
+
+## Encía y dientes (`-gum.stl`, `-tooth.ply`)
+
+- **`-gum.stl`**: la encía de la entrada, en el marco de salida, **sin lo que
+  queda dentro de algún diente**, cortada en z = 0 y **tapada ahí**. Queda
+  abierta solo donde apoyan los dientes. En BZ219-L05-A: de las caras de la
+  encía que faltan, 8 266 estaban dentro de un diente y 1 950 debajo del
+  corte; la tapa son 1 137 mm². El prototipo da la misma área (2 897,3 mm²) y
+  las dos superficies están a 0,002 mm como mucho; solo cambia la
+  triangulación.
+- **`-tooth.ply`**: PLY ASCII. No hubo muestra para comparar. Según el informe
+  (33 344 vértices y 66 636 caras en otro modelo): 2·V − F = 52 = 4 × 13, o
+  sea 13 piezas cerradas. El prototipo escribe los dientes tal cual, cerrados,
+  en el marco de salida. **A confirmar** con una muestra (encabezado,
+  precisión y si están recortados).
+
+## Prototipo
+
+`python -m enkukador CARPETA --producto toothform --salida SALIDA [--config config.json]`
+deja `SALIDA/<ID>/<modelo>.stl`, `-gum.stl` y `-tooth.ply`, y un
+`<fecha>.<hora>.log` con el mismo formato que ToothFORM. Lee
+`ParameterSettings` del mismo `config.json`.
+
+- **Pieza**: unión de todas las piezas, corte en z = 0, hueco cosido
+  (`hueco.py`), placa, puentes, macizo alrededor de R1, QR en relieve, y se
+  restan R2, R1 con su cono, chaflanes, llave y texto. Una sola malla cerrada.
+- **Límites**: `LimitH` (alto) y `LimitR` (radio desde el QR ≤ `LimitR`/2,
+  **a confirmar** si es diámetro o radio) cortan con `Height limit exceeded` y
+  `Radius limit exceeded`, sin exportar la pieza. El clip no está hecho.
+- **Medido contra ToothFORM** con la misma herramienta (`toothform_referencias.py`):
+  mismos niveles (0; 1,0; 2,4; 3,2; 5,71; 6,01), agujeros Ø 4,24 y 5,24 en
+  (0, 0) y (20, 0), QR con 0 módulos distintos, mismo alto (18,41 y 18,17).
+  Volumen 4 % y 2 % menor (el hueco y las ventanas no son idénticos). Giro
+  igual a ToothFORM (0,000°); el origen queda a 0,36 y 0,52 mm del suyo.
+- ~8–9 s por modelo.
 
 ## Lo que falta y qué datos sirven
 
@@ -96,9 +162,11 @@ valor fijo. **A confirmar** con otros casos (`modulos_distintos` lo dice).
    criterio.
 2. **El plano del agarre del robot**, para confirmar tolerancias, el sentido
    de la llave y si R1 es un centrador cónico.
-3. **Superiores**: ¿la placa va igual, o espejada?
-4. **Type2 y Type3**.
-5. **Qué hace ToothFORM cuando el QR no entra** (`IsAutoCutSupportedQr`,
+3. **Una muestra de `-tooth.ply`** de ToothFORM.
+4. **Qué mide `LimitR`** (radio o diámetro, desde dónde) y **qué mide el
+   clip** (`LimitX`).
+5. **Type2 y Type3**.
+6. **Qué hace ToothFORM cuando el QR no entra** (`IsAutoCutSupportedQr`,
    `CreateMeshWithOutQR`).
 
 ## Herramienta

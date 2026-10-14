@@ -3,6 +3,7 @@
     python -m enkukador "caso/Paciente 1.0 stl"            # carpeta entera
     python -m enkukador *.stl --salida planos --modo gh
     python -m enkukador modelo.stl --agregar id.stl --cavidad ranura.stl
+    python -m enkukador carpeta --producto toothform --salida impresion [--config config.json]
 
 Cada modelo se alinea y se guarda como STL binario. Con --agregar / --cavidad
 se concatenan otras mallas (ya en el marco alineado) en el mismo STL, sin
@@ -17,7 +18,7 @@ from pathlib import Path
 
 import trimesh
 
-from . import cnc2, exportar, hueco, maxilar, nombres
+from . import cnc2, exportar, hueco, maxilar, nombres, toothform
 from .alinear import MODOS, TIPOS, Resultado, alinear
 
 EXTENSIONES = {".stl", ".obj", ".ply", ".off"}
@@ -87,9 +88,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument(
         "--producto",
-        choices=["alineado", "cnc2", "cnc3"],
+        choices=["alineado", "cnc2", "cnc3", "toothform"],
         default="alineado",
-        help="alineado; cnc2: + chapa con ID y movimiento, ranuras y marca; cnc3: todavía no",
+        help="alineado; cnc2: + chapa con ID y movimiento, ranuras y marca; cnc3: todavía no; "
+        "toothform: pieza hueca con referencias del robot y QR, -gum.stl y -tooth.ply, en el "
+        "marco y con los nombres de ToothFORM",
+    )
+    p.add_argument(
+        "--config",
+        type=Path,
+        help="con --producto toothform: el config.json de ToothFORM (usa ParameterSettings)",
     )
     p.add_argument(
         "--vaciado",
@@ -132,6 +140,8 @@ def main(argv: list[str] | None = None) -> int:
     archivos = _entradas(args.entradas)
     if not archivos:
         p.error("no hay modelos para procesar")
+    if args.producto == "toothform":
+        return _toothform(archivos, args)
     agregados = [_cargar(a) for a in args.agregar]
     cavidades = [_cargar(c) for c in args.cavidad]
 
@@ -200,3 +210,37 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def _toothform(archivos: list[Path], args) -> int:
+    """Como Toothform.exe por línea de comandos: <salida>/<ID>/<modelo>.stl,
+    -gum.stl y -tooth.ply, y un <fecha>.<hora>.log con el mismo formato."""
+    import json
+    import time
+
+    params = toothform.Parametros()
+    if args.config:
+        ajustes = json.loads(args.config.read_text(encoding="utf-8")).get("ParameterSettings", {})
+        for k in vars(params):
+            if k in ajustes:
+                setattr(params, k, float(ajustes[k]))
+    salida = args.salida or archivos[0].parent / "toothform"
+    lineas, ok = [], 0
+    for ruta in archivos:
+        caso, _, modelo = ruta.stem.partition("-")
+        try:
+            r = toothform.generar(_cargar(ruta), caso, modelo or ruta.stem, params)
+            toothform.exportar(r, salida / caso, ruta.stem)
+            estado = r.estado
+        except Exception as e:  # noqa: BLE001 - un modelo roto no frena el lote
+            estado = "Failed to hollow"
+            print(f"ERROR {ruta.name}: {e}", file=sys.stderr)
+        ok += estado == "Export successfully"
+        lineas.append(f"{ruta.stem}    {estado}")
+        print(lineas[-1])
+    lineas += ["", f"Total {len(archivos)} models, of which {ok} succeeded and "
+               f"{len(archivos) - ok} failed"]
+    salida.mkdir(parents=True, exist_ok=True)
+    (salida / time.strftime("%Y%m%d.%H%M%S.log")).write_text("\n".join(lineas) + "\n", encoding="utf-8")
+    print(lineas[-1])
+    return 0 if ok == len(archivos) else 1
