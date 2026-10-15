@@ -99,6 +99,8 @@ FALLO_PREPROCESO = "Failed to preprocess"
 FALLO_VACIADO = "Failed to hollow"
 FALLO_UNION_QR = "Failed to merge"
 CLIP = "Clip limit exceeded"
+SIN_PTS = "Pts file not found!"  # Type3: falta el <modelo>.pts al lado del STL
+TIPOS = ("Type1", "Type3")
 
 
 class FallaToothform(Exception):
@@ -119,6 +121,7 @@ class Resultado:
     avisos: list[str] = field(default_factory=list)
     holgura_qr: float | None = None  # margen del pasillo de la pinza hacia el QR (ver pasillo_qr)
     muesca: "Muesca | None" = None  # si se abrió el pasillo en la encía (ver abrir_pasillo)
+    puntos: np.ndarray | None = None  # Type3: los del .pts, ya en el marco de la pieza
 
 
 @dataclass
@@ -610,6 +613,67 @@ def abrir_pasillo(m: trimesh.Trimesh, p: Parametros) -> tuple[trimesh.Trimesh, M
     return nueva, max(muescas, key=lambda mu: mu.profundidad)
 
 
+# ------------------------------------------------------------------ Type3: un solo shell + .pts
+
+# Leído de Toothform.exe (0x418d50, el cargador de Type3, y 0x41d8c1-0x41de77,
+# el final de la exportación): Type3 es un STL de un solo shell (encía y
+# dientes fundidos) más un <modelo>.pts al lado. Sin el .pts el modelo falla
+# con "Pts file not found!". Al cargar borra las componentes de menos de 100
+# caras y después corre la misma exportación que Type1 con el shell entero
+# como modelo y como encía, sin dientes ni attachments: no hay -tooth.ply ni
+# -att.stl. Al final lee el .pts (texto, un punto por línea, campos separados
+# por espacios o, si no llega a 3, por tabulaciones; los tres primeros son
+# x y z y el resto se ignora), le aplica la misma matriz que al modelo y lo
+# escribe como <modelo>-pts.pts, "x y z" con operator<< de double (6 cifras
+# significativas) y fin de línea de Windows. ImportExtPos (-mark.txt) no se
+# usa en esta instalación. HIPOTÉTICO hasta validarlo con un par real.
+CARAS_MINIMAS_TYPE3 = 100
+
+
+def shell_unico(malla: trimesh.Trimesh) -> trimesh.Trimesh:
+    """La malla sin las componentes de menos de CARAS_MINIMAS_TYPE3 caras."""
+    piezas = [q for q in malla.split(only_watertight=False) if len(q.faces) >= CARAS_MINIMAS_TYPE3]
+    if not piezas:
+        raise ValueError("no queda ninguna pieza de 100 caras o más")
+    return trimesh.util.concatenate(piezas) if len(piezas) > 1 else piezas[0]
+
+
+def encia_sola(malla: trimesh.Trimesh) -> trimesh.Trimesh:
+    """El -gum.stl de Type3: el shell entero (ya en el marco), cortado en z=0 y tapado."""
+    return trimesh.intersections.slice_mesh_plane(malla, [0, 0, 1], [0, 0, 0], cap=True)
+
+
+def leer_pts(texto: str) -> np.ndarray:
+    """Los puntos de un .pts como los lee ToothFORM: (n, 3), una línea por punto."""
+    puntos = []
+    for linea in texto.splitlines():
+        campos = linea.split(" ")
+        campos = [c for c in campos if c != ""]
+        if len(campos) < 3:
+            campos = [c for c in linea.split("\t") if c != ""]
+        if len(campos) < 3:
+            continue
+        try:
+            puntos.append([float(c) for c in campos[:3]])
+        except ValueError:
+            # atof: lo que no es número vale 0, como en ToothFORM
+            puntos.append([_atof(c) for c in campos[:3]])
+    return np.array(puntos, float).reshape(-1, 3)
+
+
+def _atof(c: str) -> float:
+    import re
+
+    m = re.match(r"\s*[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?", c)
+    return float(m.group(0)) if m else 0.0
+
+
+def escribir_pts(puntos: np.ndarray, M: np.ndarray) -> bytes:
+    """El -pts.pts: los puntos llevados al marco de la pieza con la matriz M."""
+    q = puntos @ M[:3, :3].T + M[:3, 3]
+    return "".join(f"{x:.6g} {y:.6g} {z:.6g}\r\n" for x, y, z in q).encode("ascii")
+
+
 # ------------------------------------------------------------------ todo junto
 
 
@@ -640,24 +704,39 @@ def pasillo_qr(solido: trimesh.Trimesh, p: Parametros, desde_z: float = 0.0) -> 
 
 
 def generar(malla: trimesh.Trimesh, caso: str, modelo: str,
-            p: Parametros | None = None) -> Resultado:
+            p: Parametros | None = None, tipo: str = "Type1",
+            puntos: np.ndarray | None = None) -> Resultado:
+    """Type1: encía, dientes y attachments como piezas separadas. Type3: un
+    solo shell; `puntos` son los del <modelo>.pts (sin ellos, "Pts file not
+    found!") y salen como -pts.pts en el marco de la pieza."""
     p = p or Parametros()
+    if tipo == "Type3" and puntos is None:
+        raise FallaToothform(SIN_PTS, "falta el <modelo>.pts al lado del modelo")
+    if tipo not in TIPOS:
+        raise ValueError(f"tipo {tipo!r}: tiene que ser uno de {', '.join(TIPOS)}")
     # Todo lo de antes de vaciar (marco, encía y dientes, unión) es el
     # "preprocesamiento" de ToothFORM: si falla, no hay pieza.
     muesca = None
     try:
+        if tipo == "Type3":
+            malla = shell_unico(malla)
         M, curva = marco(malla, p)
         m = malla.copy()
         m.apply_transform(M)
         if p.AbrirPasillo:
             m, muesca = abrir_pasillo(m, p)
-        encia, dientes = encia_y_dientes(m)
+        if tipo == "Type3":
+            encia, dientes = encia_sola(m), trimesh.Trimesh()
+        else:
+            encia, dientes = encia_y_dientes(m)
         solido = _tm(_mf(hueco.unir(m)).trim_by_plane((0, 0, 1), 0.0))
     except FallaToothform:
         raise
     except Exception as exc:  # noqa: BLE001
         raise FallaToothform(FALLO_PREPROCESO, f"{type(exc).__name__}: {exc}") from exc
     res = Resultado(pieza=solido, encia=encia, dientes=dientes, matriz=M, muesca=muesca)
+    if puntos is not None:
+        res.puntos = np.asarray(puntos, float).reshape(-1, 3) @ M[:3, :3].T + M[:3, 3]
 
     # Límites de la máquina: se chequean antes de armar la pieza.
     alto = float(solido.bounds[1][2])
@@ -753,15 +832,27 @@ MATA = ("1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1\r\n" * 2).encode("ascii")
 
 def archivos(res: Resultado, nombre: str) -> dict[str, bytes]:
     """Los archivos como ToothFORM, {nombre de archivo: bytes}: <nombre>.stl y
-    -MatA.txt (si exportó, hueca o maciza), -gum.stl y -tooth.ply."""
+    -MatA.txt (si exportó, hueca o maciza), -gum.stl, -tooth.ply (si hay
+    dientes: en Type3 no) y -pts.pts (Type3)."""
     salida = {}
     if res.estado in EXPORTADOS:
         salida[f"{nombre}.stl"] = res.pieza.export(file_type="stl")
     salida[f"{nombre}-gum.stl"] = res.encia.export(file_type="stl")
-    salida[f"{nombre}-tooth.ply"] = ply_ascii(res.dientes)
+    if len(res.dientes.faces):  # ToothFORM lo escribe solo si hay dientes
+        salida[f"{nombre}-tooth.ply"] = ply_ascii(res.dientes)
     if res.estado in EXPORTADOS:
         salida[f"{nombre}-MatA.txt"] = MATA
+        if res.puntos is not None:
+            salida[f"{nombre}-pts.pts"] = escribir_pts(res.puntos, np.eye(4))
     return salida
+
+
+def leer_pts_de(ruta: Path) -> np.ndarray:
+    """El <modelo>.pts al lado del modelo (Type3); FallaToothform si no está."""
+    pts = Path(ruta).with_suffix(".pts")
+    if not pts.is_file():
+        raise FallaToothform(SIN_PTS, f"falta {pts.name} al lado del modelo")
+    return leer_pts(pts.read_text(encoding="utf-8", errors="replace"))
 
 
 def exportar(res: Resultado, carpeta: Path, nombre: str) -> list[Path]:

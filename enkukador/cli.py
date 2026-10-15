@@ -103,6 +103,13 @@ def main(argv: list[str] | None = None) -> int:
         "--paralelo", type=int, default=1, help="con --producto toothform: modelos a la vez (ej. 4)"
     )
     p.add_argument(
+        "--tipo-dato",
+        choices=["Type1", "Type3"],
+        default="Type1",
+        help="con --producto toothform: Type1 (encía y dientes separados) o Type3 (un solo shell "
+        "más <modelo>.pts al lado; sale -pts.pts y no -tooth.ply)",
+    )
+    p.add_argument(
         "--vaciado",
         type=float,
         default=0.0,
@@ -234,7 +241,8 @@ def _toothform(archivos: list[Path], args) -> int:
     def uno(ruta: Path) -> tuple[str, list[str]]:
         caso, modelo = toothform.caso_y_modelo(ruta.stem)
         try:
-            r = toothform.generar(_cargar(ruta), caso, modelo, params)
+            puntos = toothform.leer_pts_de(ruta) if args.tipo_dato == "Type3" else None
+            r = toothform.generar(_cargar(ruta), caso, modelo, params, args.tipo_dato, puntos)
             toothform.exportar(r, salida / caso, ruta.stem)
             return r.estado, r.avisos + (
                 [f"pasillo QR {r.holgura_qr:.2f} mm"] if r.holgura_qr not in (None, float("inf")) else []

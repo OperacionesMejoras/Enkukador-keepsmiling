@@ -12,7 +12,7 @@ function guardar() {
   try {
     localStorage.setItem("enkukador", JSON.stringify({
       explorador: estado.explorador, panel: $("#panel").style.width, arbol: $("#arbol-panel").style.width,
-      opciones: Object.fromEntries(["producto", "encuadre", "modo", "tipo", "sufijo", "salida", "espesor", "destino"].map((k) => [k, $("#" + k).value])),
+      opciones: Object.fromEntries(["producto", "encuadre", "modo", "tipo", "sufijo", "salida", "espesor", "destino", "tipo-dato"].map((k) => [k, $("#" + k).value])),
       subcarpetas: estado.subcarpetas, registroPlegado: $("#registro-panel").classList.contains("plegado"),
       avanzado: $("#avanzado").open, paramsTf: estado.paramsTf,
       pasos: Object.fromEntries([...document.querySelectorAll("details.paso")].map((d) => [d.dataset.paso, d.open])),
@@ -740,6 +740,7 @@ async function alinearLista(lista) {
       const r = await (await api("/api/alinear", {
         ruta: m.ruta, ident: identDe(m, opciones.producto), ...opciones,
         parametros: opciones.producto === "toothform" ? estado.paramsTf : undefined,
+        tipo_dato: opciones.producto === "toothform" ? $("#tipo-dato").value : undefined,
       })).json();
       Object.assign(m, { estado: r.estado, resumen: r.resumen, avisos: r.avisos, tipo: r.tipo, producto: opciones.producto, exportado: null, error: null });
       log(`✓ ${m.nombre}`, r.estado === "aviso" ? "aviso" : "ok");
@@ -882,6 +883,7 @@ function pintarEstadoParams() {
 function mostrarFilasProducto() {
   const tf = $("#producto").value === "toothform";
   $("#fila-params-tf").hidden = !tf;
+  $("#fila-tipo-dato").hidden = !tf;
   $("#fila-vaciado").hidden = tf; // en ToothFORM la pared es ShellThickness
 }
 $("#producto").addEventListener("change", mostrarFilasProducto);

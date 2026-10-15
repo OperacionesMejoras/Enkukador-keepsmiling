@@ -171,6 +171,14 @@ deja `SALIDA/<ID>/<modelo>.stl`, `-gum.stl` y `-tooth.ply`, y un
   falta más que `PasilloTolerancia` o si la cuña no sale de la pared antes de
   `PasilloAltoMax`. `-gum.stl` sale con la muesca.
 - **`-MatA.txt`**: dos identidades 4×4, CRLF, como los 1492 de 2026.
+- **Type3** (keep-form 0.3.0, leído del binario, **a confirmar con un caso
+  real**): un STL de un solo shell (encía y dientes fundidos) y
+  `<modelo>.pts` al lado; sin el `.pts`, «Pts file not found!». Al cargar se
+  descartan las piezas de menos de 100 caras; la pieza y `-gum.stl` salen del
+  shell entero; no hay `-tooth.ply`. El `.pts` (un punto por línea, x y z por
+  espacios o tabulaciones; lo demás se ignora) sale como `-pts.pts` en el
+  marco de la pieza, 6 cifras significativas y CRLF. CLI: `--tipo-dato
+  Type3`; interfaz: «Tipo de dato» con ToothFORM elegido.
 - `--paralelo N` procesa N modelos a la vez (en una PC con pocos núcleos
   puede tardar más).
 - **Medido contra ToothFORM** con la misma herramienta (`toothform_referencias.py`):
@@ -197,7 +205,7 @@ deja `SALIDA/<ID>/<modelo>.stl`, `-gum.stl` y `-tooth.ply`, y un
 3. **Una muestra de `-tooth.ply`** de ToothFORM.
 4. **El clip en BZ472-U00-B**, que el pasillo del QR no explica, y desde
    dónde mide ToothFORM el diámetro de `LimitR`.
-5. **Type2 y Type3**.
+5. **Type2**, y un par real de **Type3** para validarlo.
 6. **Qué hace ToothFORM cuando el QR no entra** (`IsAutoCutSupportedQr`,
    `CreateMeshWithOutQR`).
 

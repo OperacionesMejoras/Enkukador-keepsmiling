@@ -205,8 +205,12 @@ def toothform_uno(datos: dict) -> dict:
     ruta = Path(datos["ruta"])
     caso, modelo = _ident(datos) or toothform.caso_y_modelo(ruta.stem)
     p = parametros_toothform(datos.get("parametros"))
+    tipo = datos.get("tipo_dato") or "Type1"
+    if tipo not in toothform.TIPOS:
+        raise ValueError(f"tipo de dato desconocido: {tipo}")
     try:
-        r = toothform.generar(_cargar(ruta), caso, modelo, p)
+        puntos = toothform.leer_pts_de(ruta) if tipo == "Type3" else None
+        r = toothform.generar(_cargar(ruta), caso, modelo, p, tipo, puntos)
     except toothform.FallaToothform as e:
         raise ValueError(f"{e.estado}: {e.detalle}") from e
     if r.estado not in toothform.EXPORTADOS:
@@ -231,6 +235,8 @@ def toothform_uno(datos: dict) -> dict:
     cambiados = {k: v for k, v in vars(p).items() if v != getattr(toothform.Parametros(), k)}
     if cambiados:
         holgura += " | parámetros: " + ", ".join(f"{k}={v:g}" for k, v in cambiados.items())
+    if tipo != "Type1":
+        holgura += f" | tipo de dato: {tipo}" + (f", {len(r.puntos)} puntos del .pts" if r.puntos is not None else "")
     return {
         "ruta": str(ruta),
         "tipo": "inf" if modelo[:1].upper() == "L" else "sup",

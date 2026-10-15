@@ -544,3 +544,63 @@ def test_toothform_la_muesca_tiene_limites():
         assert e.value.estado == toothform.CLIP and motivo in e.value.detalle
     r = toothform.generar(malla, "AB123", "U05-A")
     assert r.muesca is None and any("sólo aviso" in a for a in r.avisos)
+
+
+# --- Type3 (keep-form 0.3.0, leído del binario; falta un par real) ---
+
+
+def _solido_unico():
+    """La arcada simétrica fundida en un solo shell: encía y dientes unidos."""
+    malla = _arcada_simetrica()
+    piezas = malla.split(only_watertight=False)
+    encia = max(piezas, key=lambda q: q.area)
+    for d in piezas:
+        if d is not encia:
+            encia = encia.union(d, engine="manifold")
+    return encia
+
+
+def test_toothform_type3_un_solo_shell_mas_pts(tmp_path):
+    """Un STL de un solo shell y <modelo>.pts al lado: sale la pieza, -gum.stl
+    con el shell entero, sin -tooth.ply, y -pts.pts con los puntos en el marco
+    de la pieza. Sin el .pts: 'Pts file not found!'."""
+    from enkukador import toothform
+
+    solido = _solido_unico()
+    basura = trimesh.creation.box((1, 1, 1))  # menos de 100 caras: se descarta
+    basura.apply_translation([60, 60, 5])
+    entrada = tmp_path / "AB123-U05-A.stl"
+    trimesh.util.concatenate([solido, basura]).export(entrada)
+    v = solido.vertices
+    puntos = np.array([v[0], v[len(v) // 2], [1.5, -2.25, 3.0]])
+    entrada.with_suffix(".pts").write_text(
+        f"{puntos[0,0]} {puntos[0,1]} {puntos[0,2]} 7 etiqueta\n\n"
+        f"{puntos[1,0]}\t{puntos[1,1]}\t{puntos[1,2]}\n1.5 -2.25 3\n"
+    )
+    r = toothform.generar(trimesh.load(entrada), "AB123", "U05-A", None, "Type3",
+                          toothform.leer_pts_de(entrada))
+    assert r.estado in toothform.EXPORTADOS
+    rutas = {x.name: x for x in toothform.exportar(r, tmp_path / "sale", "AB123-U05-A")}
+    assert "AB123-U05-A-tooth.ply" not in rutas and "AB123-U05-A-MatA.txt" in rutas
+    gum = trimesh.load(rutas["AB123-U05-A-gum.stl"])
+    assert gum.bounds[1][2] > 12 and gum.bounds[0][2] > -1e-6 and gum.bounds[1][0] < 59
+    M, _ = toothform.marco(solido)
+    esperado = puntos @ M[:3, :3].T + M[:3, 3]
+    lineas = rutas["AB123-U05-A-pts.pts"].read_bytes().split(b"\r\n")
+    assert lineas[-1] == b"" and len(lineas) == 4
+    leido = np.array([[float(c) for c in l.split(b" ")] for l in lineas[:3]])
+    assert np.abs(leido - esperado).max() < 1e-3
+
+    entrada.with_suffix(".pts").unlink()
+    with pytest.raises(toothform.FallaToothform) as e:
+        toothform.leer_pts_de(entrada)
+    assert e.value.estado == toothform.SIN_PTS
+    with pytest.raises(ValueError):
+        toothform.generar(trimesh.load(entrada), "AB123", "U05-A", None, "Type2")
+
+
+def test_toothform_leer_pts_como_toothform():
+    from enkukador import toothform
+
+    p = toothform.leer_pts("1 2 3\r\n4\t5\t6\t7\n  8   9   10 \nsolo dos 1\n1.5e1 x 2\n")
+    assert p.tolist() == [[1, 2, 3], [4, 5, 6], [8, 9, 10], [0.0, 0.0, 1.0], [15.0, 0.0, 2.0]]
