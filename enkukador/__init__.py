@@ -4,7 +4,7 @@ Reemplazo en Python de la parte de orientación de "Modelos planos V5.06.02"
 (Grasshopper). Ver README.md.
 """
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 from .alinear import MODOS, TIPOS, Resultado, alinear
 from .exportar import concatenar, exportar_stl
