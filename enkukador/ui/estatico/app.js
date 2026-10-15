@@ -14,7 +14,7 @@ function guardar() {
       explorador: estado.explorador, panel: $("#panel").style.width, arbol: $("#arbol-panel").style.width,
       opciones: Object.fromEntries(["producto", "encuadre", "modo", "tipo", "sufijo", "salida", "espesor", "destino"].map((k) => [k, $("#" + k).value])),
       subcarpetas: estado.subcarpetas, registroPlegado: $("#registro-panel").classList.contains("plegado"),
-      avanzado: $("#avanzado").open,
+      avanzado: $("#avanzado").open, paramsTf: estado.paramsTf,
       checks: Object.fromEntries(["plantilla", "botones", "vaciar"].map((k) => [k, $("#" + k).checked])),
     }));
   } catch { /* sin almacenamiento: no pasa nada */ }
@@ -25,6 +25,7 @@ for (const [k, v] of Object.entries(guardado.opciones || {})) $("#" + k).value =
 for (const [k, v] of Object.entries(guardado.checks || {})) $("#" + k).checked = v;
 estado.subcarpetas = guardado.subcarpetas || {};
 if (guardado.avanzado) $("#avanzado").open = true;
+estado.paramsTf = guardado.paramsTf || {};
 $("#avanzado").addEventListener("toggle", () => guardar());
 document.querySelectorAll("input, select").forEach((el) => el.addEventListener("change", guardar));
 
@@ -105,17 +106,33 @@ async function agregarCarpeta(ruta) {
     if (!r.modelos.length) return log(`Sin modelos en ${r.carpeta}`, "aviso");
     estado.lote.push(r.carpeta);
     const ya = new Set(estado.modelos.map((m) => m.ruta));
-    for (const m of r.modelos) if (!ya.has(m.ruta)) estado.modelos.push({ ...m, carpeta: r.carpeta, marcado: false });
-    log(`+ ${r.modelos.length} modelos de ${r.carpeta}`);
+    for (const m of r.modelos) if (!ya.has(m.ruta)) estado.modelos.push({ ...m, carpeta: r.carpeta, fuente: r.carpeta, marcado: false });
+    log(`+ ${r.modelos.length} modelo${r.modelos.length > 1 ? "s" : ""} de ${r.carpeta}`);
     dibujarLote();
     dibujarArbol();
   } catch (e) { log(e.message, "error"); }
 }
 
+// Un modelo suelto: entra al lote él solo (sin el resto de su carpeta).
+async function agregarArchivo(ruta) {
+  if (estado.modelos.some((m) => m.ruta === ruta)) return log(`Ya está en el lote: ${ruta}`, "aviso");
+  try {
+    const r = await (await api(`/api/modelo?ruta=${encodeURIComponent(ruta)}&botones=${$("#botones").checked ? 1 : 0}`)).json();
+    const m = r.modelos[0];
+    estado.lote.push(m.ruta);
+    estado.modelos.push({ ...m, carpeta: r.carpeta, fuente: m.ruta, marcado: false });
+    log(`+ ${m.nombre}`);
+    dibujarLote();
+    dibujarArbol();
+  } catch (e) { log(e.message, "error"); }
+}
+
+const esArchivo = (fuente) => estado.modelos.some((m) => m.fuente === fuente && m.ruta === fuente);
+
 function quitarCarpeta(ruta) {
   estado.lote = estado.lote.filter((c) => c !== ruta);
-  estado.modelos = estado.modelos.filter((m) => m.carpeta !== ruta);
-  if (estado.elegido && estado.elegido.carpeta === ruta) {
+  estado.modelos = estado.modelos.filter((m) => m.fuente !== ruta);
+  if (estado.elegido && estado.elegido.fuente === ruta) {
     estado.elegido = null;
     visor.limpiar();
     titulo("Elegí un modelo en el árbol");
@@ -134,15 +151,16 @@ function dibujarLote() {
     li.title = c;
     const n = document.createElement("div");
     n.className = "carpeta";
+    const archivo = esArchivo(c);
     const b = document.createElement("b");
-    b.textContent = nombreCarpeta(c);
+    b.textContent = archivo ? c.split(/[\\/]/).pop() : nombreCarpeta(c);
     const r = document.createElement("small");
-    r.textContent = c;
+    r.textContent = archivo ? c.slice(0, -b.textContent.length) : c;
     n.append(b, r);
     const k = document.createElement("span");
     k.className = "cuenta";
-    k.textContent = estado.modelos.filter((m) => m.carpeta === c).length;
-    k.title = "modelos";
+    k.textContent = archivo ? "suelto" : estado.modelos.filter((m) => m.fuente === c).length;
+    k.title = archivo ? "modelo suelto" : "modelos de la carpeta";
     const x = document.createElement("button");
     x.textContent = "✕";
     x.title = "Sacar del lote";
@@ -194,12 +212,36 @@ async function explorar(ruta) {
       li.onclick = () => explorar(c.ruta);
       ul.append(li);
     }
+    if (!estado.alElegir) for (const a of r.archivos || []) {
+      const li = document.createElement("li");
+      li.className = "archivo";
+      const n = document.createElement("span");
+      n.className = "nombre";
+      n.textContent = "▣ " + a.nombre;
+      li.append(n);
+      if (estado.modelos.some((m) => m.ruta === a.ruta)) {
+        const ya = document.createElement("span");
+        ya.className = "ya";
+        ya.textContent = "✓ en el lote";
+        li.append(ya);
+      } else {
+        const mas = document.createElement("button");
+        mas.type = "button";
+        mas.textContent = "+ agregar";
+        mas.title = "Agregar solo este modelo";
+        const agregar = async (e) => { e?.stopPropagation(); await agregarArchivo(a.ruta); explorar(r.ruta); };
+        mas.onclick = agregar;
+        li.ondblclick = agregar;
+        li.append(mas);
+      }
+      ul.append(li);
+    }
   } catch (e) { log(e.message, "error"); }
 }
 function abrirExplorador(alElegir, desde) {
   estado.alElegir = alElegir; // null: importar; función: elegir una carpeta
-  $("#exp-titulo").textContent = alElegir ? "Elegir la carpeta de salida" : "Importar carpetas";
-  $("#exp-agregar").textContent = alElegir ? "Usar esta carpeta" : "Agregar esta carpeta";
+  $("#exp-titulo").textContent = alElegir ? "Elegir la carpeta de salida" : "Importar carpetas o modelos";
+  $("#exp-agregar").textContent = alElegir ? "Usar esta carpeta" : "Agregar toda la carpeta";
   $("#explorador").showModal();
   explorar(desde || estado.explorador);
 }
@@ -301,7 +343,8 @@ function grupo(titulo, clase) {
 function dibujarArbol() {
   const raiz = $("#arbol");
   raiz.textContent = "";
-  for (const c of estado.lote) {
+  const carpetas = [...new Set(estado.modelos.map((m) => m.carpeta))];
+  for (const c of carpetas) {
     const delCaso = estado.modelos.filter((m) => m.carpeta === c);
     estado.prefijos[c] = prefijoComun(delCaso.map((m) => m.nombre));
     const [gc, hc] = grupo(`${nombreCarpeta(c)} (${delCaso.length})`, "caso");
@@ -315,7 +358,7 @@ function dibujarArbol() {
     }
     raiz.append(gc);
   }
-  if (!estado.lote.length) raiz.innerHTML = '<div class="vacio"><b>Sin modelos</b>Importá carpetas con «Importar carpetas…»</div>';
+  if (!estado.modelos.length) raiz.innerHTML = '<div class="vacio"><b>Sin modelos</b>Importá carpetas o modelos sueltos con «Importar…»</div>';
   const ok = estado.modelos.filter((m) => m.estado === "ok" || m.estado === "aviso").length;
   $("#contador").textContent = estado.modelos.length ? `${ok}/${estado.modelos.length} alineados` : "";
   const ley = $("#leyenda");
@@ -661,7 +704,10 @@ async function alinearLista(lista) {
     m.estado = "trabajando";
     dibujarArbol();
     try {
-      const r = await (await api("/api/alinear", { ruta: m.ruta, ident: identDe(m, opciones.producto), ...opciones })).json();
+      const r = await (await api("/api/alinear", {
+        ruta: m.ruta, ident: identDe(m, opciones.producto), ...opciones,
+        parametros: opciones.producto === "toothform" ? estado.paramsTf : undefined,
+      })).json();
       Object.assign(m, { estado: r.estado, resumen: r.resumen, avisos: r.avisos, tipo: r.tipo, producto: opciones.producto, exportado: null, error: null });
       log(`✓ ${m.nombre}`, r.estado === "aviso" ? "aviso" : "ok");
       for (const a of r.avisos) log(`   ${a}`, "aviso");
@@ -762,3 +808,148 @@ $("#act-revertir").onclick = async () => {
   try { await api("/api/actualizacion/revertir", {}); esperarReinicio(); }
   catch (e) { $("#act-estado").textContent = e.message; }
 };
+
+
+// --- parámetros de ToothFORM: los estándar y lo que se cambie para probar ---
+const PARAMS_TF = [
+  ["Pieza", [
+    ["ShellThickness", "Espesor de pared", "mm", "pared del vaciado; recomendado 1,8–2,2"],
+    ["BottomPlaneThickness", "Espesor de los puentes", "mm", "puentes del fondo, con el texto calado"],
+    ["QrSize", "Tamaño del QR", "mm", "lado del QR en relieve"],
+    ["Radius1", "Radio R1", "mm", "agujero ciego bajo los incisivos (centrador)"],
+    ["Radius2", "Radio R2", "mm", "agujero pasante del centro del QR"],
+  ]],
+  ["Límites de la máquina", [
+    ["LimitH", "Altura máxima", "mm", "más alto: «Height limit exceeded»"],
+    ["LimitR", "Diámetro máximo", "mm", "medido alrededor del QR: «Radius limit exceeded»"],
+    ["LimitX", "Pasillo de la pinza (clip)", "mm", "lugar libre a cada lado del QR"],
+  ]],
+  ["Muesca del pasillo (en prueba)", [
+    ["AbrirPasillo", "Abrir una muesca si el pasillo no alcanza", "si", "si no, solo avisa"],
+    ["PasilloMargen", "Margen sobre LimitX", "mm", "lo que deja la muesca de más"],
+    ["PasilloGrados", "Inclinación de la cara", "°", "abriéndose hacia arriba (desmoldeo)"],
+    ["PasilloPiso", "Altura del piso", "mm", "desde dónde corta: la cara del QR"],
+    ["PasilloTolerancia", "Falta máxima a corregir", "mm", "si falta más: «Clip limit exceeded»"],
+    ["PasilloAltoMax", "Alto máximo de la cuña", "mm", "si no sale de la pared antes: error"],
+    ["PasilloDiente", "Distancia mínima a un diente", "mm", "más cerca: error"],
+  ]],
+];
+let estandarTf = null;
+const fmt = (v) => (Math.round(v * 1000) / 1000).toString();
+
+function pintarEstadoParams() {
+  const n = Object.keys(estado.paramsTf).length;
+  const i = $("#estado-params-tf");
+  i.textContent = n ? `${n} cambiado${n > 1 ? "s" : ""}` : "estándar";
+  i.classList.toggle("cambiados", n > 0);
+  i.title = n ? Object.entries(estado.paramsTf).map(([k, v]) => `${k} = ${v}`).join("\n") : "Los de producción";
+}
+
+function mostrarFilasProducto() {
+  const tf = $("#producto").value === "toothform";
+  $("#fila-params-tf").hidden = !tf;
+  $("#fila-vaciado").hidden = tf; // en ToothFORM la pared es ShellThickness
+}
+$("#producto").addEventListener("change", mostrarFilasProducto);
+mostrarFilasProducto();
+pintarEstadoParams();
+
+function armarParams(valores) {
+  const caja = $("#params-tf-campos");
+  caja.textContent = "";
+  for (const [grupo, campos] of PARAMS_TF) {
+    const fs = document.createElement("fieldset");
+    const lg = document.createElement("legend");
+    lg.textContent = grupo;
+    fs.append(lg);
+    for (const [clave, nombre, unidad, ayuda] of campos) {
+      const std = estandarTf[clave];
+      const fila = document.createElement("div");
+      fila.className = "param";
+      const n = document.createElement("div");
+      n.className = "nombre";
+      n.innerHTML = "<b></b><small></small>";
+      n.querySelector("b").textContent = nombre;
+      n.querySelector("small").textContent = `${ayuda} · ${clave}`;
+      let inp;
+      if (unidad === "si") {
+        inp = document.createElement("input");
+        inp.type = "checkbox";
+        inp.className = "interruptor";
+        inp.checked = !!(valores[clave] ?? std);
+      } else {
+        inp = document.createElement("input");
+        inp.type = "number";
+        inp.step = "0.01";
+        inp.value = fmt(valores[clave] ?? std);
+      }
+      inp.dataset.clave = clave;
+      const u = document.createElement("span");
+      u.className = "unidad";
+      u.textContent = unidad === "si" ? "" : unidad;
+      const s = document.createElement("span");
+      s.className = "std";
+      const marcar = () => {
+        const v = unidad === "si" ? (inp.checked ? 1 : 0) : +inp.value;
+        const cambiado = v !== std;
+        fila.classList.toggle("cambiado", cambiado);
+        s.textContent = cambiado ? `estándar ${unidad === "si" ? (std ? "sí" : "no") : fmt(std)}` : "estándar";
+        s.title = cambiado ? "Volver al estándar" : "";
+      };
+      s.onclick = () => {
+        if (unidad === "si") inp.checked = !!std; else inp.value = fmt(std);
+        marcar();
+      };
+      inp.addEventListener("input", marcar);
+      inp.addEventListener("change", marcar);
+      marcar();
+      fila.append(n, inp, u, s);
+      fs.append(fila);
+    }
+    caja.append(fs);
+  }
+}
+
+function leerParams() {
+  const salida = {};
+  for (const inp of document.querySelectorAll("#params-tf-campos [data-clave]")) {
+    const k = inp.dataset.clave;
+    const v = inp.type === "checkbox" ? (inp.checked ? 1 : 0) : +inp.value;
+    if (inp.type !== "checkbox" && !Number.isFinite(v)) throw new Error(`${k}: no es un número`);
+    if (v !== estandarTf[k]) salida[k] = v;
+  }
+  return salida;
+}
+
+$("#abrir-params-tf").onclick = async () => {
+  try {
+    if (!estandarTf) estandarTf = (await (await api("/api/toothform/parametros")).json()).estandar;
+  } catch (e) { return log(`Parámetros de ToothFORM: ${e.message}`, "error"); }
+  armarParams(estado.paramsTf);
+  $("#params-tf").showModal();
+};
+$("#params-tf-estandar").onclick = () => armarParams({});
+$("#params-tf-importar").onclick = () => $("#params-tf-archivo").click();
+$("#params-tf-archivo").onchange = async (e) => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  try {
+    const j = JSON.parse(await f.text());
+    const ps = j.ParameterSettings || j;
+    const valores = {};
+    for (const [k, v] of Object.entries(ps)) if (k in estandarTf && v !== "" && Number.isFinite(+v)) valores[k] = +v;
+    armarParams(valores);
+    log(`Parámetros tomados de ${f.name}: ${Object.keys(valores).length}`);
+  } catch (err) { log(`${f.name}: no se pudo leer (${err.message})`, "error"); }
+};
+$("#params-tf").addEventListener("close", () => {
+  if ($("#params-tf").returnValue !== "aplicar") return;
+  try {
+    estado.paramsTf = leerParams();
+  } catch (e) { return log(e.message, "error"); }
+  pintarEstadoParams();
+  guardar();
+  const n = Object.keys(estado.paramsTf).length;
+  log(n ? `ToothFORM con parámetros de prueba: ${Object.entries(estado.paramsTf).map(([k, v]) => `${k}=${v}`).join(", ")}` : "ToothFORM con los parámetros estándar", n ? "aviso" : "");
+});

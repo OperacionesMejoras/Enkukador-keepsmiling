@@ -84,7 +84,7 @@ input.corto { width: 64px; flex: none; }
 /* lote */
 #lote { list-style: none; margin: 8px 0 0; padding: 0; max-height: 160px; overflow: auto;
   display: flex; flex-direction: column; gap: 4px; }
-#lote:empty::before { content: "Sin carpetas: importá una o más."; color: var(--muy-tenue); font-size: 12px; }
+#lote:empty::before { content: "Importá carpetas o modelos sueltos."; color: var(--muy-tenue); font-size: 12px; }
 #lote li { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; background: var(--fondo);
   border: 1px solid var(--borde-suave); border-radius: var(--radio); }
 #lote li .carpeta { flex: 1; min-width: 0; }
@@ -277,3 +277,29 @@ dialog#actualizador { width: min(560px, 92vw); }
   #registro-panel { height: 130px; }
   .paso { padding: 10px 14px 10px; }
 }
+
+/* parámetros de ToothFORM */
+.params-tf { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.params-tf button { min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+.params-tf .insignia { flex: none; }
+.params-tf[hidden], .vaciado[hidden] { display: none; }
+.params-tf .insignia.cambiados { color: var(--aviso); border-color: rgba(224, 163, 58, .45); background: rgba(224, 163, 58, .12); }
+dialog#params-tf { width: min(680px, 94vw); }
+dialog#params-tf form { max-height: 88vh; }
+dialog#params-tf code { font-size: 12px; color: var(--texto); }
+#params-tf-campos { overflow: auto; display: flex; flex-direction: column; gap: 14px; padding-right: 4px; }
+#params-tf-campos fieldset { border: 1px solid var(--borde-suave); border-radius: var(--radio); margin: 0; padding: 8px 12px 10px; }
+#params-tf-campos legend { padding: 0 6px; color: var(--tenue); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+.param { display: grid; grid-template-columns: minmax(0, 1fr) 96px 26px 92px; gap: 4px 10px; align-items: center; padding: 5px 0; }
+.param + .param { border-top: 1px dashed var(--borde-suave); }
+.param .nombre b { display: block; font-weight: 600; }
+.param .nombre small { display: block; color: var(--muy-tenue); font-size: 11px; }
+.param .nombre code { color: var(--muy-tenue); font-size: 11px; }
+.param input[type=number] { text-align: right; font-variant-numeric: tabular-nums; }
+.param .unidad { font-size: 12px; }
+.param .std { color: var(--muy-tenue); font-size: 11px; text-align: right; }
+.param.cambiado input { border-color: var(--aviso); color: var(--aviso); }
+.param.cambiado .std { color: var(--aviso); cursor: pointer; text-decoration: underline dotted; }
+.param .interruptor { justify-self: end; grid-column: 2; }
+#exp-lista li.archivo .nombre { color: var(--texto); }
+#exp-lista li.archivo:first-of-type, #exp-lista li:not(.archivo) + li.archivo { border-top: 1px solid var(--borde-suave); margin-top: 4px; padding-top: 8px; }

@@ -56,26 +56,30 @@ su propio eje: sirve de control, no se corrige.
 ```
 
 Abre el navegador con una interfaz local (HTML + JavaScript vanilla, visor
-WebGL propio, sin internet ni dependencias nuevas), al estilo de la que tenía
-el GH con Human UI:
+WebGL propio, sin internet ni dependencias nuevas):
 
-- **Izquierda** (se agranda arrastrando el borde): «Importar carpetas…» abre un
-  explorador para armar el lote (una o varias carpetas de casos), producto
-  (solo alineado, CNC2, CNC3), opciones y botones
-  para alinear los marcados o todos; registro con avisos.
+- **Izquierda**, por pasos: **1 · Modelos** («Importar…» abre un explorador
+  para sumar carpetas enteras o modelos sueltos al lote), **2 · Producto**
+  (tarjetas: solo alineado, CNC2, ToothFORM; lo del alineado va en «Alineado
+  avanzado») y **3 · Exportar** (una carpeta elegida o junto a cada caso). Las
+  acciones (alinear los marcados o el elegido, alinear todos, exportar) quedan
+  fijas abajo. Con ToothFORM, «⚙ Parámetros…» abre los de su `config.json`
+  (espesor, límites de la máquina, pasillo de la pinza y la muesca) para
+  probar: los estándar son los de producción, lo cambiado se marca y se puede
+  volver o importar un `config.json`.
 - **Centro**: visor 3D del modelo elegido, original o alineado, con el piso
   z=0, los ejes, la curva central (naranja) y los 4 puntos de la plantilla
   (verde). Arrastrar gira, botón derecho o shift mueve, la rueda hace zoom, F
-  encuadra.
-- **Etapas**: con un modelo alineado, una barra abajo del visor recorre las
-  etapas alineadas del mismo maxilar con un fundido entre una y la siguiente
-  (la sólida en beige, la otra translúcida en celeste); ▶ las recorre solas. Si
-  todas quedaron en el mismo marco, base y contorno no se mueven.
-- **Derecha** (también se agranda): árbol de modelos por inferiores/superiores
-  con su estado (pendiente, ok, aviso, error) y el detalle del elegido.
+  encuadra. Debajo, el **registro** (plegable) con la hora y la cuenta de
+  errores y avisos.
+- **Etapas**: con un modelo alineado, una barra recorre las etapas alineadas
+  del mismo maxilar con un fundido entre una y la siguiente; ▶ las recorre.
+- **Derecha** (se agranda arrastrando el borde): árbol de modelos por caso e
+  inferiores/superiores con su estado y una leyenda; abajo, el detalle del
+  elegido (resumen, avisos, exportado y el ID que se graba, editable).
 
-Escucha solo en 127.0.0.1. Recuerda la última carpeta, las opciones y el ancho
-de los paneles.
+Escucha solo en 127.0.0.1. Recuerda la última carpeta, las opciones, los
+parámetros de prueba y el ancho de los paneles.
 
 ## Opciones
 

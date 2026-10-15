@@ -473,3 +473,74 @@ def test_tipo_con_nombres_de_toothform():
     assert tipo_por_nombre("BZ254-U00-B.stl") == "sup"
     assert tipo_por_nombre("0044 Apellido 1.0 sup 01.stl") == "sup"
     assert tipo_por_nombre("sin-tipo.stl") is None
+
+
+def _arcada_simetrica():
+    """U extruida con la base en z=0 y ocho dientes; la tapa achicada para que
+    la base sea la de abajo, como en un escaneo (keep-form)."""
+    from shapely.geometry import Point, box
+
+    from enkukador import arco
+
+    anillo = Point(0, 0).buffer(27, 256).difference(Point(0, 0).buffer(17, 256))
+    u = anillo.intersection(box(-50, -6, 50, 50))
+    encia = trimesh.creation.extrude_polygon(u.simplify(0.05), 14, engine="manifold")
+    curva = arco.remuestrear_curva(arco.curva_central(arco.contorno_base(encia, 0.5)), 0.5)
+    dientes = []
+    for i in np.linspace(len(curva) * 0.1, len(curva) * 0.9, 8).astype(int):
+        d = trimesh.creation.cylinder(radius=2.5, height=8.0, sections=24)
+        d.apply_translation([curva[i, 0], curva[i, 1], 13.0])
+        dientes.append(d)
+    malla = trimesh.util.concatenate([encia, *dientes])
+    malla.vertices[malla.vertices[:, 2] > 13.9, :2] *= 0.99
+    return malla
+
+
+def _arcada_que_invade_el_pasillo(alto_saliente=6.0):
+    """Un saliente en la pared palatina que entra en el pasillo de la pinza:
+    en el marco de ToothFORM, x -4..0 con |y| desde 10,2 (pasillo 2,2 < 2,5)."""
+    from shapely.geometry import box
+
+    malla = _arcada_simetrica()
+    saliente = trimesh.creation.extrude_polygon(box(10.2, -3.0, 17.5, 1.0), alto_saliente, engine="manifold")
+    piezas = malla.split(only_watertight=False)
+    encia = max(piezas, key=lambda q: q.area)
+    resto = [q for q in piezas if q is not encia]
+    return trimesh.util.concatenate([encia.union(saliente, engine="manifold"), *resto])
+
+
+def test_toothform_abre_el_pasillo_en_la_encia():
+    """Con AbrirPasillo, si el pasillo no llega a LimitX se le saca a la encía
+    una cuña desde la cara del QR, inclinada 2°, hasta LimitX + margen; los
+    dientes no se tocan y -gum.stl sale con la muesca (keep-form 0.2.0)."""
+    from enkukador import toothform
+
+    malla = _arcada_que_invade_el_pasillo()
+    p = toothform.Parametros(AbrirPasillo=1)
+    r = toothform.generar(malla, "AB123", "U05-A", p)
+    assert r.estado in toothform.EXPORTADOS and r.muesca is not None
+    aviso = next(a for a in r.avisos if "muesca" in a)
+    assert "queda 2.8" in aviso and "desde z=3.2" in aviso
+    assert r.holgura_qr == pytest.approx(2.2, abs=0.05)  # el del log es el de antes
+    g, w = r.encia.vertices, (p.QrSize + 1) / 2
+    arriba = g[(g[:, 0] <= 10 - w) & (g[:, 2] > p.PasilloPiso + 0.01)]
+    assert np.abs(arriba[:, 1]).min() - w >= p.LimitX + p.PasilloMargen - 1e-3
+    abajo = g[(g[:, 0] <= 10 - w) & (g[:, 2] < p.PasilloPiso - 0.01) & (g[:, 2] >= 0)]
+    assert np.abs(abajo[:, 1]).min() - w < p.LimitX  # por debajo del piso queda como estaba
+
+
+def test_toothform_la_muesca_tiene_limites():
+    """Si falta más que la tolerancia, si la cuña no sale de la pared antes de
+    PasilloAltoMax o si queda cerca de un diente: 'Clip limit exceeded'. Y
+    apagado (por defecto) sigue siendo solo aviso."""
+    from enkukador import toothform
+
+    malla = _arcada_que_invade_el_pasillo()
+    for extra, motivo in [({"PasilloTolerancia": 0.1}, "PasilloTolerancia"),
+                          ({"PasilloAltoMax": 1}, "PasilloAltoMax"),
+                          ({"PasilloDiente": 50}, "diente")]:
+        with pytest.raises(toothform.FallaToothform) as e:
+            toothform.generar(malla, "AB123", "U05-A", toothform.Parametros(AbrirPasillo=1, **extra))
+        assert e.value.estado == toothform.CLIP and motivo in e.value.detalle
+    r = toothform.generar(malla, "AB123", "U05-A")
+    assert r.muesca is None and any("sólo aviso" in a for a in r.avisos)

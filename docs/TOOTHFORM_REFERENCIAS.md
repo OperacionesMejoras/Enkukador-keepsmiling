@@ -163,6 +163,13 @@ deja `SALIDA/<ID>/<modelo>.stl`, `-gum.stl` y `-tooth.ply`, y un
   tocan por una arista: BX087, BX059); si la costura no cierra, se resta la
   cavidad con manifold3d (BY184-U03-A); y la pieza queda en un solo cuerpo
   (las booleanas dejaban pedacitos en 9 de 44 modelos de BZ219).
+- **Muesca del pasillo** (keep-form 0.2.0, apagada por defecto:
+  `AbrirPasillo`): si el pasillo no llega a `LimitX`, se le saca a la encía
+  (no a los dientes, antes de vaciar) una cuña desde la cara del QR (z=3,2),
+  inclinada 2° hacia arriba, hasta `LimitX` + `PasilloMargen`. Es «Clip limit
+  exceeded» si hay un diente en el pasillo o a menos de `PasilloDiente`, si
+  falta más que `PasilloTolerancia` o si la cuña no sale de la pared antes de
+  `PasilloAltoMax`. `-gum.stl` sale con la muesca.
 - **`-MatA.txt`**: dos identidades 4×4, CRLF, como los 1492 de 2026.
 - `--paralelo N` procesa N modelos a la vez (en una PC con pocos núcleos
   puede tardar más).

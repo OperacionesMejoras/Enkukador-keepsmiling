@@ -2,6 +2,7 @@
 
 import json
 import threading
+import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -126,3 +127,31 @@ def test_toothform_desde_la_interfaz(servidor, tmp_path):
     assert hechos == ["AB123-L05-A-MatA.txt", "AB123-L05-A-gum.stl", "AB123-L05-A-tooth.ply", "AB123-L05-A.stl"]
     tri = np.frombuffer(get(f"{servidor}/api/malla?ruta={quote(ruta)}&vista=alineado"), "<f4")
     assert tri.size > 0
+
+
+def test_modelo_suelto_y_archivos_del_explorador(servidor, tmp_path):
+    caso = tmp_path / "caso"
+    caso.mkdir()
+    mover(arcada(radio=22.0), 10).export(caso / "AB123-L05-A.stl")
+    (caso / "notas.txt").write_text("x")
+    ex = json.loads(get(f"{servidor}/api/explorar?ruta={quote(str(caso))}"))
+    assert [a["nombre"] for a in ex["archivos"]] == ["AB123-L05-A.stl"]
+    m = json.loads(get(f"{servidor}/api/modelo?ruta={quote(str(caso / 'AB123-L05-A.stl'))}"))
+    assert m["carpeta"] == str(caso) and m["modelos"][0]["tipo"] == "inf"
+    with pytest.raises(urllib.error.HTTPError):
+        get(f"{servidor}/api/modelo?ruta={quote(str(caso / 'notas.txt'))}")
+
+
+def test_parametros_de_toothform_desde_la_interfaz(servidor, tmp_path):
+    from test_alinear import _arcada_con_dientes
+
+    std = json.loads(get(f"{servidor}/api/toothform/parametros"))["estandar"]
+    assert std["ShellThickness"] == 1.8 and std["LimitX"] == 2.5 and std["AbrirPasillo"] == 0
+    caso = tmp_path / "entrada"
+    caso.mkdir()
+    _arcada_con_dientes().export(caso / "AB123-L05-A.stl")
+    ruta = str(caso / "AB123-L05-A.stl")
+    r = post(f"{servidor}/api/alinear", {"ruta": ruta, "producto": "toothform", "parametros": {"ShellThickness": 2.2}})
+    assert "ShellThickness=2.2" in r["resumen"]
+    with pytest.raises(urllib.error.HTTPError):
+        post(f"{servidor}/api/alinear", {"ruta": ruta, "producto": "toothform", "parametros": {"Nada": 1}})

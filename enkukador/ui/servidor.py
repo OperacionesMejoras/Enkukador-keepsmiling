@@ -8,6 +8,8 @@ es HTML + JS vanilla, con un visor WebGL propio: no baja nada de internet.
 API (JSON salvo /api/malla):
     GET  /api/explorar?ruta=...       subcarpetas (con cuántos modelos tiene cada una)
     GET  /api/listar?carpeta=...      modelos de la carpeta con su tipo deducido
+    GET  /api/modelo?ruta=...         un modelo suelto (para agregarlo sin su carpeta)
+    GET  /api/toothform/parametros    los Parametros estándar de ToothFORM
     POST /api/alinear                 {ruta, modo, tipo, botones, plantilla, salida, sufijo}
     GET  /api/malla?ruta=...&vista=   triángulos como float32 (original | alineado)
     GET  /api/extras?ruta=...         curva central y plantilla, en el marco alineado
@@ -117,12 +119,34 @@ def explorar(ruta: str | None) -> dict:
         raise ValueError(f"no se puede leer {c}: {e}") from e
     for p in hijos:
         carpetas.append({"nombre": p.name, "ruta": str(p), "modelos": _cuenta_modelos(p)})
+    archivos = [
+        {"nombre": p.name, "ruta": str(p)}
+        for p in sorted(c.iterdir(), key=lambda p: p.name.lower())
+        if p.suffix.lower() in EXTENSIONES and p.is_file()
+    ]
     padre = str(c.parent) if c.parent != c else ("" if sys.platform == "win32" else None)
     return {
         "ruta": str(c),
         "padre": padre,
-        "modelos": _cuenta_modelos(c),
+        "modelos": len(archivos),
         "carpetas": carpetas,
+        "archivos": archivos,
+    }
+
+
+def _info_modelo(p: Path, botones: bool) -> dict:
+    previo = _resultados.get(str(p))
+    return {
+        "ruta": str(p),
+        "nombre": p.name,
+        "tipo": nombres.tipo_por_nombre(p, botones),
+        "estado": previo["estado"] if previo else "pendiente",
+        # lo que se graba en la pieza según el producto; la interfaz lo
+        # muestra antes de alinear y deja corregirlo
+        "ident": {
+            "toothform": list(toothform.caso_y_modelo(p.stem)),
+            "cnc2": list(cnc2.partes_de_nombre(p)),
+        },
     }
 
 
@@ -130,25 +154,20 @@ def listar(carpeta: str, botones: bool = False) -> dict:
     c = Path(carpeta).expanduser()
     if not c.is_dir():
         raise ValueError(f"no existe la carpeta: {c}")
-    modelos = []
-    for p in sorted(c.iterdir()):
-        if p.suffix.lower() in EXTENSIONES and p.is_file():
-            previo = _resultados.get(str(p))
-            modelos.append(
-                {
-                    "ruta": str(p),
-                    "nombre": p.name,
-                    "tipo": nombres.tipo_por_nombre(p, botones),
-                    "estado": previo["estado"] if previo else "pendiente",
-                    # lo que se graba en la pieza según el producto; la interfaz
-                    # lo muestra antes de alinear y deja corregirlo
-                    "ident": {
-                        "toothform": list(toothform.caso_y_modelo(p.stem)),
-                        "cnc2": list(cnc2.partes_de_nombre(p)),
-                    },
-                }
-            )
+    modelos = [
+        _info_modelo(p, botones)
+        for p in sorted(c.iterdir())
+        if p.suffix.lower() in EXTENSIONES and p.is_file()
+    ]
     return {"carpeta": str(c), "modelos": modelos}
+
+
+def modelo(ruta: str, botones: bool = False) -> dict:
+    """Un modelo suelto, para agregarlo al lote sin su carpeta."""
+    p = Path(ruta).expanduser()
+    if not (p.is_file() and p.suffix.lower() in EXTENSIONES):
+        raise ValueError(f"no es un modelo ({', '.join(sorted(EXTENSIONES))}): {p}")
+    return {"carpeta": str(p.parent), "modelos": [_info_modelo(p, botones)]}
 
 
 def _ident(datos: dict) -> tuple[str, str] | None:
@@ -164,16 +183,28 @@ def _base_salida(ruta: Path, salida: str | None, subcarpeta: str | None, product
     return exportar.destino_gh(ruta, producto, subcarpeta=subcarpeta or None).parent
 
 
+def parametros_toothform(valores: dict | None) -> toothform.Parametros:
+    """Parametros estándar con lo que venga de la interfaz encima (solo las
+    claves conocidas y números)."""
+    p = toothform.Parametros()
+    for k, v in (valores or {}).items():
+        if not hasattr(p, k):
+            raise ValueError(f"parámetro desconocido: {k}")
+        try:
+            setattr(p, k, float(v))
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"{k} tiene que ser un número (llegó {v!r})") from e
+    return p
+
+
 def toothform_uno(datos: dict) -> dict:
     """Producto toothform: arma lo de ToothFORM (pieza, -gum.stl, -tooth.ply,
     -MatA.txt), que se exporta en <salida>/<ID>/. Usa su propio marco; encuadre,
-    modo y tipo no cuentan. El espesor del vaciado, si se marca, es ShellThickness."""
+    modo y tipo no cuentan. `parametros` (los de ParameterSettings y la muesca
+    del pasillo, ver /api/toothform/parametros) pisan los estándar."""
     ruta = Path(datos["ruta"])
     caso, modelo = _ident(datos) or toothform.caso_y_modelo(ruta.stem)
-    p = toothform.Parametros()
-    espesor = float(datos.get("vaciado") or 0)
-    if espesor > 0:
-        p.ShellThickness = espesor
+    p = parametros_toothform(datos.get("parametros"))
     try:
         r = toothform.generar(_cargar(ruta), caso, modelo, p)
     except toothform.FallaToothform as e:
@@ -195,6 +226,11 @@ def toothform_uno(datos: dict) -> dict:
             "malla": r.pieza, "escribir": escribir, "exportado": None,
         }
     holgura = "" if r.holgura_qr in (None, float("inf")) else f" | pasillo QR: {r.holgura_qr:.2f} mm"
+    if r.muesca is not None:
+        holgura += f" | muesca: {r.muesca}"
+    cambiados = {k: v for k, v in vars(p).items() if v != getattr(toothform.Parametros(), k)}
+    if cambiados:
+        holgura += " | parámetros: " + ", ".join(f"{k}={v:g}" for k, v in cambiados.items())
     return {
         "ruta": str(ruta),
         "tipo": "inf" if modelo[:1].upper() == "L" else "sup",
@@ -359,6 +395,8 @@ class Manejador(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
         try:
+            if url.path == "/api/toothform/parametros":
+                return self._json({"estandar": vars(toothform.Parametros())})
             if url.path == "/api/version":
                 return self._json({"nombre": "enkukador", "version": __version__})
             if url.path == "/api/latido":
@@ -372,6 +410,8 @@ class Manejador(BaseHTTPRequestHandler):
                 return self._json(explorar(q.get("ruta")))
             if url.path == "/api/listar":
                 return self._json(listar(q.get("carpeta", ""), q.get("botones") == "1"))
+            if url.path == "/api/modelo":
+                return self._json(modelo(q.get("ruta", ""), q.get("botones") == "1"))
             if url.path == "/api/malla":
                 datos = triangulos(q["ruta"], q.get("vista", "original"))
                 return self._responder(datos, "application/octet-stream")
