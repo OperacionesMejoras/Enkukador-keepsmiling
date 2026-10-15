@@ -194,12 +194,12 @@ def toothform_uno(datos: dict) -> dict:
             "estado": estado, "matriz": r.matriz, "curva": None, "plantilla": False,
             "malla": r.pieza, "escribir": escribir, "exportado": None,
         }
-    holgura = "" if r.holgura_qr in (None, float("inf")) else f" | pasillo QR {r.holgura_qr:.2f} mm"
+    holgura = "" if r.holgura_qr in (None, float("inf")) else f" | pasillo QR: {r.holgura_qr:.2f} mm"
     return {
         "ruta": str(ruta),
         "tipo": "inf" if modelo[:1].upper() == "L" else "sup",
         "estado": estado,
-        "resumen": f"ToothFORM: {r.estado} | QR «{caso}{modelo.replace('-', '')}»{holgura}",
+        "resumen": f"ToothFORM: {r.estado} | QR: «{caso}{modelo.replace('-', '')}»{holgura}",
         "avisos": avisos,
     }
 

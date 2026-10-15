@@ -462,3 +462,14 @@ def test_toothform_caso_y_modelo_del_nombre():
     assert toothform.caso_y_modelo("BZ254-U00-B") == ("BZ254", "U00-B")
     assert toothform.caso_y_modelo("BZ254-U00-B.ENTRADA-falla (1)") == ("BZ254", "U00-B")
     assert toothform.caso_y_modelo("BZ254") == ("BZ254", "BZ254")
+
+
+def test_tipo_con_nombres_de_toothform():
+    from enkukador.nombres import tipo_por_nombre
+
+    assert tipo_por_nombre("BZ254-U05-A.stl") == "sup"
+    assert tipo_por_nombre("BZ219-L05-A.ENTRADA (1).stl") == "inf"
+    assert tipo_por_nombre("BZ254-U00-B.stl", botones=True) == "bot"
+    assert tipo_por_nombre("BZ254-U00-B.stl") == "sup"
+    assert tipo_por_nombre("0044 Apellido 1.0 sup 01.stl") == "sup"
+    assert tipo_por_nombre("sin-tipo.stl") is None

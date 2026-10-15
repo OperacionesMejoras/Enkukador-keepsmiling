@@ -13,7 +13,8 @@ function guardar() {
     localStorage.setItem("enkukador", JSON.stringify({
       explorador: estado.explorador, panel: $("#panel").style.width, arbol: $("#arbol-panel").style.width,
       opciones: Object.fromEntries(["producto", "encuadre", "modo", "tipo", "sufijo", "salida", "espesor", "destino"].map((k) => [k, $("#" + k).value])),
-      subcarpetas: estado.subcarpetas,
+      subcarpetas: estado.subcarpetas, registroPlegado: $("#registro-panel").classList.contains("plegado"),
+      avanzado: $("#avanzado").open,
       checks: Object.fromEntries(["plantilla", "botones", "vaciar"].map((k) => [k, $("#" + k).checked])),
     }));
   } catch { /* sin almacenamiento: no pasa nada */ }
@@ -23,6 +24,8 @@ if (guardado.arbol) $("#arbol-panel").style.width = guardado.arbol;
 for (const [k, v] of Object.entries(guardado.opciones || {})) $("#" + k).value = v;
 for (const [k, v] of Object.entries(guardado.checks || {})) $("#" + k).checked = v;
 estado.subcarpetas = guardado.subcarpetas || {};
+if (guardado.avanzado) $("#avanzado").open = true;
+$("#avanzado").addEventListener("toggle", () => guardar());
 document.querySelectorAll("input, select").forEach((el) => el.addEventListener("change", guardar));
 
 // --- paneles agrandables ---
@@ -42,14 +45,51 @@ document.querySelectorAll(".divisor").forEach((div) => {
   });
 });
 
-// --- registro ---
+// --- registro (panel plegable bajo el visor) ---
+const cuentas = { error: 0, aviso: 0 };
 function log(texto, clase = "") {
   const d = document.createElement("div");
-  d.textContent = texto;
+  const h = document.createElement("span");
+  h.className = "hora";
+  h.textContent = new Date().toLocaleTimeString("es-AR", { hour12: false });
+  d.append(h, texto);
   if (clase) d.className = clase;
+  if (clase in cuentas) { cuentas[clase]++; dibujarCuentas(); }
   $("#registro").append(d);
   $("#registro").scrollTop = 1e9;
 }
+function dibujarCuentas() {
+  const c = $("#registro-cuentas");
+  c.textContent = "";
+  for (const [k, txt] of [["error", "error"], ["aviso", "aviso"]]) {
+    if (!cuentas[k]) continue;
+    const s = document.createElement("span");
+    s.className = `insignia ${k}`;
+    s.textContent = `${cuentas[k]} ${txt}${cuentas[k] > 1 ? (k === "error" ? "es" : "s") : ""}`;
+    c.append(s);
+  }
+}
+$("#limpiar-registro").onclick = () => { $("#registro").textContent = ""; cuentas.error = cuentas.aviso = 0; dibujarCuentas(); };
+$("#plegar-registro").onclick = () => { $("#registro-panel").classList.toggle("plegado"); guardar(); };
+if (guardado.registroPlegado) $("#registro-panel").classList.add("plegado");
+
+// --- tarjetas y segmentados: botones que manejan un <select> oculto ---
+function enlazarOpciones(contenedor) {
+  const sel = document.getElementById(contenedor.dataset.select);
+  const pintar = () => contenedor.querySelectorAll("[data-valor]").forEach((b) => {
+    const si = b.dataset.valor === sel.value;
+    b.classList.toggle("activo", si);
+    b.setAttribute("aria-checked", si);
+  });
+  contenedor.querySelectorAll("[data-valor]").forEach((b) => (b.onclick = () => {
+    if (sel.value === b.dataset.valor) return;
+    sel.value = b.dataset.valor;
+    sel.dispatchEvent(new Event("change"));
+  }));
+  sel.addEventListener("change", pintar);
+  pintar();
+}
+document.querySelectorAll("[data-select]").forEach(enlazarOpciones);
 
 async function api(url, cuerpo) {
   const r = await fetch(url, cuerpo ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) } : {});
@@ -78,7 +118,7 @@ function quitarCarpeta(ruta) {
   if (estado.elegido && estado.elegido.carpeta === ruta) {
     estado.elegido = null;
     visor.limpiar();
-    $("#titulo-visor").textContent = "Elegí un modelo en el árbol";
+    titulo("Elegí un modelo en el árbol");
     $("#detalle").textContent = "";
     prepararEtapas();
   }
@@ -91,14 +131,23 @@ function dibujarLote() {
   ul.textContent = "";
   for (const c of estado.lote) {
     const li = document.createElement("li");
-    const n = document.createElement("span");
-    n.textContent = c;
-    n.title = c;
+    li.title = c;
+    const n = document.createElement("div");
+    n.className = "carpeta";
+    const b = document.createElement("b");
+    b.textContent = nombreCarpeta(c);
+    const r = document.createElement("small");
+    r.textContent = c;
+    n.append(b, r);
+    const k = document.createElement("span");
+    k.className = "cuenta";
+    k.textContent = estado.modelos.filter((m) => m.carpeta === c).length;
+    k.title = "modelos";
     const x = document.createElement("button");
-    x.textContent = "×";
+    x.textContent = "✕";
     x.title = "Sacar del lote";
     x.onclick = () => quitarCarpeta(c);
-    li.append(n, x);
+    li.append(n, k, x);
     ul.append(li);
   }
 }
@@ -114,7 +163,7 @@ async function explorar(ruta) {
     $("#exp-ruta").value = r.ruta;
     $("#exp-subir").disabled = !r.padre;
     $("#exp-subir").onclick = () => explorar(r.padre);
-    $("#exp-info").textContent = r.modelos ? `${r.modelos} modelos en esta carpeta` : "esta carpeta no tiene modelos";
+    $("#exp-info").textContent = r.modelos ? `${r.modelos} modelo${r.modelos > 1 ? "s" : ""} en esta carpeta` : "Esta carpeta no tiene modelos";
     $("#exp-agregar").disabled = estado.alElegir ? false : !r.modelos;
     const ul = $("#exp-lista");
     ul.textContent = "";
@@ -127,12 +176,20 @@ async function explorar(ruta) {
       if (c.modelos && !estado.alElegir) {
         const k = document.createElement("span");
         k.className = "cuenta";
-        k.textContent = `${c.modelos} modelos`;
-        const mas = document.createElement("button");
-        mas.type = "button";
-        mas.textContent = "+ agregar";
-        mas.onclick = (e) => { e.stopPropagation(); agregarCarpeta(c.ruta); };
-        li.append(k, mas);
+        k.textContent = `${c.modelos} modelo${c.modelos > 1 ? "s" : ""}`;
+        li.append(k);
+        if (estado.lote.includes(c.ruta)) {
+          const ya = document.createElement("span");
+          ya.className = "ya";
+          ya.textContent = "✓ en el lote";
+          li.append(ya);
+        } else {
+          const mas = document.createElement("button");
+          mas.type = "button";
+          mas.textContent = "+ agregar";
+          mas.onclick = async (e) => { e.stopPropagation(); await agregarCarpeta(c.ruta); explorar(r.ruta); };
+          li.append(mas);
+        }
       }
       li.onclick = () => explorar(c.ruta);
       ul.append(li);
@@ -258,9 +315,30 @@ function dibujarArbol() {
     }
     raiz.append(gc);
   }
-  if (!estado.lote.length) raiz.innerHTML = '<div class="vacio">Importá carpetas con «Importar carpetas…»</div>';
+  if (!estado.lote.length) raiz.innerHTML = '<div class="vacio"><b>Sin modelos</b>Importá carpetas con «Importar carpetas…»</div>';
   const ok = estado.modelos.filter((m) => m.estado === "ok" || m.estado === "aviso").length;
-  $("#contador").textContent = estado.modelos.length ? `${ok}/${estado.modelos.length}` : "";
+  $("#contador").textContent = estado.modelos.length ? `${ok}/${estado.modelos.length} alineados` : "";
+  const ley = $("#leyenda");
+  ley.textContent = "";
+  for (const k of ["ok", "aviso", "error"]) {
+    const n = estado.modelos.filter((m) => m.estado === k).length;
+    if (!n) continue;
+    const s = document.createElement("span");
+    const p = document.createElement("i");
+    p.className = `punto ${k}`;
+    s.title = k;
+    s.append(p, n);
+    ley.append(s);
+  }
+  actualizarMarcados();
+}
+
+function actualizarMarcados() {
+  const n = estado.modelos.filter((m) => m.marcado).length;
+  $("#marcados").textContent = n ? `${n} marcado${n > 1 ? "s" : ""}` : "";
+  $("#todos").checked = n > 0 && n === estado.modelos.length;
+  $("#todos").indeterminate = n > 0 && n < estado.modelos.length;
+  $("#alinear-sel").textContent = n ? `Alinear marcados (${n})` : estado.elegido ? "Alinear el elegido" : "Alinear seleccionados";
 }
 
 function hoja(m) {
@@ -269,7 +347,7 @@ function hoja(m) {
   const chk = document.createElement("input");
   chk.type = "checkbox";
   chk.checked = m.marcado;
-  chk.onclick = (e) => { e.stopPropagation(); m.marcado = chk.checked; };
+  chk.onclick = (e) => { e.stopPropagation(); m.marcado = chk.checked; actualizarMarcados(); };
   const p = document.createElement("span");
   p.className = `punto ${m.estado}`;
   p.title = m.estado;
@@ -278,6 +356,7 @@ function hoja(m) {
   n.textContent = corto(m);
   n.title = m.ruta;
   h.append(chk, p, n);
+  h.title = m.ruta;
   if (m.exportado) {
     const x = document.createElement("span");
     x.className = "exportado";
@@ -386,6 +465,18 @@ function parar() {
   $("#reproducir").textContent = "▶";
 }
 
+const ESTADOS = { ok: "alineado", aviso: "con avisos", error: "error", pendiente: "pendiente", trabajando: "procesando…" };
+function titulo(texto, m = null) {
+  $("#titulo-texto").textContent = texto;
+  const i = $("#titulo-insignia");
+  i.textContent = "";
+  if (!m) return;
+  const s = document.createElement("span");
+  s.className = `insignia ${m.estado}`;
+  s.textContent = ESTADOS[m.estado] || m.estado;
+  i.append(s);
+}
+
 async function cargarVista() {
   const m = estado.elegido;
   if (!m) return;
@@ -395,7 +486,7 @@ async function cargarVista() {
     b.classList.toggle("activo", b.dataset.vista === vista);
     b.disabled = b.dataset.vista === "alineado" && !alineado;
   });
-  $("#titulo-visor").textContent = `${m.nombre} — cargando…`;
+  titulo(`${m.nombre} — cargando…`, m);
   try {
     const buf = await (await api(`/api/malla?ruta=${encodeURIComponent(m.ruta)}&vista=${vista}`)).arrayBuffer();
     if (estado.elegido !== m) return; // eligieron otro mientras cargaba
@@ -409,22 +500,65 @@ async function cargarVista() {
       visor.setExtras();
     }
     visor.encuadrar();
-    $("#titulo-visor").textContent = `${m.nombre} — ${vista === "alineado" ? "alineado" : "original (centrado)"}`;
+    titulo(`${m.nombre} · ${vista === "alineado" ? (m.producto && m.producto !== "alineado" ? $(`#producto option[value=${m.producto}]`).text : "alineado") : "original"}`, m);
   } catch (e) {
-    $("#titulo-visor").textContent = m.nombre;
+    titulo(m.nombre, m);
     log(`${m.nombre}: ${e.message}`, "error");
   }
 }
 
+const TIPOS = { inf: "Inferior", sup: "Superior", bot: "Botones / pasivos" };
 function mostrarDetalle(m) {
   const d = $("#detalle");
   d.textContent = "";
-  const b = document.createElement("b");
-  b.textContent = m.nombre;
-  d.append(b, `\ntipo: ${m.tipo ?? "?"} · estado: ${m.estado}`);
-  if (m.resumen) d.append(`\n\n${m.resumen.replaceAll(" | ", "\n")}`);
-  if (m.avisos?.length) d.append(`\n\nAVISOS:\n${m.avisos.join("\n")}`);
-  if (alineado(m)) d.append(m.exportado ? `\n\nexportado → ${m.exportado}` : "\n\nsin exportar");
+  const h = document.createElement("h3");
+  h.textContent = m.nombre;
+  h.title = m.ruta;
+  const ins = document.createElement("div");
+  ins.className = "insignias";
+  for (const [clase, texto] of [[m.estado, ESTADOS[m.estado] || m.estado], ["", TIPOS[m.tipo] || "tipo ?"]]) {
+    const s = document.createElement("span");
+    s.className = `insignia ${clase}`;
+    s.textContent = texto;
+    ins.append(s);
+  }
+  d.append(h, ins);
+  if (m.estado === "error" && m.error) {
+    const c = document.createElement("div");
+    c.className = "caja error";
+    c.textContent = m.error;
+    d.append(c);
+  }
+  if (m.resumen && m.estado !== "error") {
+    const dl = document.createElement("dl");
+    for (const parte of m.resumen.split(" | ")) {
+      const k = parte.match(/^([^:]{1,24}?):\s*(.*)$/);
+      const dd = document.createElement("dd");
+      if (k) {
+        const dt = document.createElement("dt");
+        dt.textContent = k[1];
+        dd.textContent = k[2];
+        dl.append(dt, dd);
+      } else {
+        dd.className = "entero";
+        dd.textContent = parte;
+        dl.append(dd);
+      }
+    }
+    d.append(dl);
+  }
+  if (m.avisos?.length && m.estado !== "error") {
+    const c = document.createElement("div");
+    c.className = "caja aviso";
+    for (const a of m.avisos) { const p = document.createElement("p"); p.textContent = a; c.append(p); }
+    d.append(c);
+  }
+  if (alineado(m)) {
+    const x = document.createElement("div");
+    x.className = "exportado" + (m.exportado ? " si" : "");
+    x.textContent = m.exportado ? `↓ exportado en ${m.exportado}` : "Sin exportar todavía";
+    d.append(x);
+  }
   const e = editorIdent(m);
   if (e) d.append(e);
 }
@@ -453,12 +587,13 @@ function editorIdent(m) {
   if (!conf || !par) return null;
   const caja = document.createElement("div");
   caja.className = "ident";
-  const t = document.createElement("b");
+  const t = document.createElement("div");
+  t.className = "titulo";
   t.textContent = conf.titulo;
   const nota = document.createElement("div");
   const actualizar = () => {
     const p = identDe(m, producto), mal = problemaIdent(m, producto);
-    nota.className = mal ? "error" : "";
+    nota.className = "nota-ident" + (mal ? " error" : "");
     nota.textContent = mal || (producto === "toothform"
       ? `QR: ${textoQr(p)} · texto: ${p[0]} / ${p[1]}`
       : `chapa: ${p[0]} · movimiento: ${p[1]}`);
@@ -466,6 +601,8 @@ function editorIdent(m) {
   const entradas = conf.campos.map((nombre, i) => {
     const l = document.createElement("label");
     const inp = document.createElement("input");
+    inp.type = "text";
+    inp.spellcheck = false;
     inp.value = par[i];
     inp.oninput = () => {
       const nuevo = [...identDe(m, producto)];
@@ -478,10 +615,15 @@ function editorIdent(m) {
   });
   const volver = document.createElement("button");
   volver.type = "button";
-  volver.textContent = "del nombre";
+  volver.className = "chico";
+  volver.textContent = "Del nombre";
   volver.title = "Volver a lo que sale del nombre del archivo";
   volver.onclick = () => { if (m.identEditado) delete m.identEditado[producto]; mostrarDetalle(m); };
-  caja.append(t, ...entradas, volver, nota);
+  t.append(volver);
+  const campos = document.createElement("div");
+  campos.className = "campos";
+  campos.append(...entradas);
+  caja.append(t, campos, nota);
   actualizar();
   return caja;
 }
@@ -510,7 +652,7 @@ async function alinearLista(lista) {
   for (const m of lista) {
     const mal = problemaIdent(m, opciones.producto);
     if (mal) {
-      m.estado = "error";
+      Object.assign(m, { estado: "error", error: `${mal} (corregilo abajo)`, resumen: null, avisos: [] });
       log(`✗ ${m.nombre}: ${mal} (corregilo en el detalle)`, "error");
       barra.style.width = `${(100 * ++hechos) / lista.length}%`;
       dibujarArbol();
@@ -520,11 +662,11 @@ async function alinearLista(lista) {
     dibujarArbol();
     try {
       const r = await (await api("/api/alinear", { ruta: m.ruta, ident: identDe(m, opciones.producto), ...opciones })).json();
-      Object.assign(m, { estado: r.estado, resumen: r.resumen, avisos: r.avisos, tipo: r.tipo, producto: opciones.producto, exportado: null });
+      Object.assign(m, { estado: r.estado, resumen: r.resumen, avisos: r.avisos, tipo: r.tipo, producto: opciones.producto, exportado: null, error: null });
       log(`✓ ${m.nombre}`, r.estado === "aviso" ? "aviso" : "ok");
       for (const a of r.avisos) log(`   ${a}`, "aviso");
     } catch (e) {
-      m.estado = "error";
+      Object.assign(m, { estado: "error", error: e.message, resumen: null, avisos: [] });
       log(`✗ ${m.nombre}: ${e.message}`, "error");
     }
     barra.style.width = `${(100 * ++hechos) / lista.length}%`;

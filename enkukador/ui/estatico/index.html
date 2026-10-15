@@ -11,124 +11,156 @@
 <div id="app">
   <aside id="panel" class="lateral">
     <header class="cabecera-app">
-      <img src="icono.png" alt="" class="logo"> Enkukador <span id="version"></span>
-      <button id="abrir-actualizar" title="Actualizaciones">⟳</button>
+      <img src="icono.png" alt="" class="logo">
+      <span class="marca">Enkukador</span>
+      <span id="version"></span>
+      <button id="abrir-actualizar" class="icono" title="Actualizaciones">⟳</button>
     </header>
 
-    <section>
-      <label>Lote</label>
-      <div class="fila">
-        <button id="importar" class="primario crece-boton">Importar carpetas…</button>
-        <button id="vaciar-lote" title="Sacar todas las carpetas del lote">Vaciar</button>
-      </div>
-      <ul id="lote"></ul>
-    </section>
+    <div class="desplazable">
+      <section class="paso">
+        <h2><span class="numero">1</span> Modelos</h2>
+        <div class="fila">
+          <button id="importar" class="primario crece-boton">Importar carpetas…</button>
+          <button id="vaciar-lote" class="icono" title="Sacar todas las carpetas del lote">✕</button>
+        </div>
+        <ul id="lote"></ul>
+      </section>
 
-    <section>
-      <label>Opciones</label>
-      <div class="opcion">
-        <span>Producto</span>
-        <select id="producto">
+      <section class="paso">
+        <h2><span class="numero">2</span> Producto</h2>
+        <select id="producto" class="oculto" aria-hidden="true" tabindex="-1">
           <option value="alineado">Solo alineado</option>
-          <option value="cnc2">CNC2 (chapa + ID + movimiento)</option>
-          <option value="cnc3">CNC3 (todavía no)</option>
-          <option value="toothform">ToothFORM (impresión con QR)</option>
+          <option value="cnc2">CNC2</option>
+          <option value="cnc3">CNC3</option>
+          <option value="toothform">ToothFORM</option>
         </select>
-      </div>
-      <div class="opcion">
-        <span>Encuadre</span>
-        <select id="encuadre">
-          <option value="maxilar">Por maxilar (rápido)</option>
-          <option value="unico">Único (cada modelo)</option>
-        </select>
-      </div>
-      <div class="opcion">
-        <span>Modo</span>
-        <select id="modo">
-          <option value="gh">GH (réplica)</option>
-          <option value="simetria">Simetría</option>
-        </select>
-      </div>
-      <div class="opcion">
-        <span>Tipo</span>
-        <select id="tipo">
-          <option value="auto">Según el nombre</option>
-          <option value="inf">Inferior</option>
-          <option value="sup">Superior</option>
-          <option value="bot">Botones / pasivos</option>
-        </select>
-      </div>
-      <div class="opcion">
-        <label class="check sin-margen"><input id="vaciar" type="checkbox"> Vaciado, pared</label>
-        <input id="espesor" type="number" min="0.8" max="6" step="0.1" value="2" class="corto"> <span class="unidad">mm</span>
-      </div>
-      <label class="check"><input id="plantilla" type="checkbox" checked> Centrar con la plantilla</label>
-      <label class="check"><input id="botones" type="checkbox"> Etapas 0 / 00 / 00b como botones</label>
-      <div class="opcion">
-        <span>Sufijo</span>
-        <input id="sufijo" type="text" placeholder="(ninguno)">
-      </div>
-    </section>
+        <div class="tarjetas" data-select="producto" role="radiogroup" aria-label="Producto">
+          <button type="button" data-valor="alineado" role="radio">
+            <b>Solo alineado</b><small>Base en z=0 y arcada orientada</small>
+          </button>
+          <button type="button" data-valor="cnc2" role="radio">
+            <b>CNC2</b><small>Chapa con ID y movimiento</small>
+          </button>
+          <button type="button" data-valor="toothform" role="radio">
+            <b>ToothFORM</b><small>Impresión con QR y referencias</small>
+          </button>
+          <button type="button" data-valor="cnc3" role="radio" class="pronto">
+            <b>CNC3</b><small>Todavía no</small>
+          </button>
+        </div>
+        <div class="opcion vaciado">
+          <label class="check sin-margen"><input id="vaciar" type="checkbox"> Vaciar, pared de</label>
+          <input id="espesor" type="number" min="0.8" max="6" step="0.1" value="2" class="corto">
+          <span class="unidad">mm</span>
+        </div>
 
-    <section>
-      <label>Exportar</label>
-      <div class="opcion">
-        <span>Destino</span>
-        <select id="destino">
+        <details id="avanzado">
+          <summary>Alineado avanzado</summary>
+          <div class="opcion">
+            <span>Encuadre</span>
+            <select id="encuadre">
+              <option value="maxilar">Por maxilar (rápido)</option>
+              <option value="unico">Único (cada modelo)</option>
+            </select>
+          </div>
+          <div class="opcion">
+            <span>Modo</span>
+            <select id="modo">
+              <option value="gh">GH (réplica)</option>
+              <option value="simetria">Simetría</option>
+            </select>
+          </div>
+          <div class="opcion">
+            <span>Tipo</span>
+            <select id="tipo">
+              <option value="auto">Según el nombre</option>
+              <option value="inf">Inferior</option>
+              <option value="sup">Superior</option>
+              <option value="bot">Botones / pasivos</option>
+            </select>
+          </div>
+          <div class="opcion">
+            <span>Sufijo</span>
+            <input id="sufijo" type="text" placeholder="(ninguno)">
+          </div>
+          <label class="check"><input id="plantilla" type="checkbox" checked> Centrar con la plantilla</label>
+          <label class="check"><input id="botones" type="checkbox"> Etapas 0 / 00 / 00b como botones</label>
+          <p class="nota">ToothFORM usa su propio marco: encuadre, modo, tipo y plantilla no cuentan.</p>
+        </details>
+      </section>
+
+      <section class="paso">
+        <h2><span class="numero">3</span> Exportar</h2>
+        <select id="destino" class="oculto" aria-hidden="true" tabindex="-1">
           <option value="carpeta">Una carpeta elegida</option>
           <option value="caso">Junto a cada caso</option>
         </select>
-      </div>
-      <div class="opcion" id="fila-salida">
-        <span>Carpeta</span>
-        <input id="salida" type="text" placeholder="(sin elegir)" spellcheck="false">
-        <button id="elegir-salida" type="button" title="Elegir la carpeta">Elegir…</button>
-      </div>
-      <div class="opcion" id="fila-subcarpeta">
-        <span>Subcarpeta</span>
-        <input id="subcarpeta" type="text" spellcheck="false">
-      </div>
-    </section>
+        <div class="segmentado" data-select="destino" role="radiogroup" aria-label="Destino">
+          <button type="button" data-valor="carpeta" role="radio">Carpeta elegida</button>
+          <button type="button" data-valor="caso" role="radio">Junto a cada caso</button>
+        </div>
+        <div class="opcion" id="fila-salida">
+          <input id="salida" type="text" placeholder="(sin elegir)" spellcheck="false">
+          <button id="elegir-salida" type="button" title="Elegir la carpeta">Elegir…</button>
+        </div>
+        <div class="opcion" id="fila-subcarpeta">
+          <span>Subcarpeta</span>
+          <input id="subcarpeta" type="text" spellcheck="false">
+        </div>
+      </section>
+    </div>
 
-    <section class="acciones">
-      <button id="alinear-sel" class="primario">Alinear seleccionados</button>
-      <button id="alinear-todos">Alinear todos</button>
-      <button id="exportar" title="Guarda los modelos alineados (los marcados o, si no hay, todos)">Exportar alineados</button>
+    <footer class="acciones">
       <div id="progreso"><div></div></div>
-    </section>
-
-    <section class="crece">
-      <label>Registro</label>
-      <div id="registro"></div>
-    </section>
+      <button id="alinear-sel" class="primario">Alinear seleccionados</button>
+      <div class="fila">
+        <button id="alinear-todos" class="crece-boton">Alinear todos</button>
+        <button id="exportar" class="crece-boton" title="Guarda los modelos alineados (los marcados o, si no hay, todos)">Exportar</button>
+      </div>
+    </footer>
   </aside>
   <div class="divisor" data-panel="panel" data-lado="izq"></div>
 
   <main id="centro">
-    <canvas id="visor"></canvas>
-    <div id="barra-visor">
-      <span id="titulo-visor">Elegí un modelo en el árbol</span>
-      <span class="grupo-vista">
-        <button data-vista="original">Original</button>
-        <button data-vista="alineado" class="activo">Alineado</button>
-      </span>
-      <button id="encuadrar" title="Encuadrar (F)">Encuadrar</button>
+    <div id="zona-visor">
+      <canvas id="visor"></canvas>
+      <div id="barra-visor">
+        <div id="titulo-visor"><span id="titulo-texto">Elegí un modelo en el árbol</span><span id="titulo-insignia"></span></div>
+        <span class="grupo-vista">
+          <button data-vista="original">Original</button>
+          <button data-vista="alineado" class="activo">Alineado</button>
+        </span>
+        <button id="encuadrar" class="icono-texto" title="Encuadrar (F)">⤢ Encuadrar</button>
+      </div>
+      <div id="etapas" hidden>
+        <button id="reproducir" class="icono" title="Recorrer las etapas">▶</button>
+        <input id="slider-etapa" type="range" min="0" max="0" step="0.01" value="0">
+        <span id="etiqueta-etapa"></span>
+      </div>
+      <div id="ayuda"><kbd>arrastrar</kbd> girar <kbd>derecho</kbd> mover <kbd>rueda</kbd> zoom <kbd>F</kbd> encuadrar</div>
     </div>
-    <div id="etapas" hidden>
-      <button id="reproducir" title="Recorrer las etapas">▶</button>
-      <input id="slider-etapa" type="range" min="0" max="0" step="0.01" value="0">
-      <span id="etiqueta-etapa"></span>
-    </div>
-    <div id="ayuda">arrastrar: girar · derecho / shift: mover · rueda: zoom · F: encuadrar</div>
+
+    <section id="registro-panel">
+      <header>
+        <button id="plegar-registro" class="plegar" title="Mostrar u ocultar el registro">Registro</button>
+        <span id="registro-cuentas"></span>
+        <span class="crece-boton"></span>
+        <button id="limpiar-registro" class="chico" title="Borrar el registro">Limpiar</button>
+      </header>
+      <div id="registro"></div>
+    </section>
   </main>
 
   <div class="divisor" data-panel="arbol-panel" data-lado="der"></div>
   <aside id="arbol-panel" class="lateral">
-    <header>
+    <header class="cabecera-arbol">
       Modelos <span id="contador"></span>
     </header>
     <div class="arbol-acciones">
-      <label class="check"><input id="todos" type="checkbox"> todos</label>
+      <label class="check"><input id="todos" type="checkbox"> Todos</label>
+      <span id="marcados"></span>
+      <span id="leyenda"></span>
     </div>
     <div id="arbol"></div>
     <div id="detalle"></div>
@@ -150,7 +182,7 @@
   <form method="dialog">
     <header id="exp-titulo">Importar carpetas</header>
     <div class="fila">
-      <button type="button" id="exp-subir" title="Carpeta de arriba">↑</button>
+      <button type="button" id="exp-subir" class="icono" title="Carpeta de arriba">↑</button>
       <input id="exp-ruta" type="text" spellcheck="false">
       <button type="button" id="exp-ir">Ir</button>
     </div>
