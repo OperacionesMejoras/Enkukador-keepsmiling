@@ -604,3 +604,31 @@ def test_toothform_leer_pts_como_toothform():
 
     p = toothform.leer_pts("1 2 3\r\n4\t5\t6\t7\n  8   9   10 \nsolo dos 1\n1.5e1 x 2\n")
     assert p.tolist() == [[1, 2, 3], [4, 5, 6], [8, 9, 10], [0.0, 0.0, 1.0], [15.0, 0.0, 2.0]]
+
+
+def test_toothform_type3_con_abrir_pasillo_no_se_rompe_ni_abre_la_muesca(tmp_path):
+    """BY179 (keep-form 0.3.0): Type3 con AbrirPasillo daba «Failed to
+    preprocess» en los 42 modelos, por un min() sin dientes. Ahora exporta, no
+    abre la muesca salvo con PasilloEnType3 y, si el pasillo no da, avisa."""
+    from enkukador import toothform
+
+    solido = _solido_unico()
+    pts = np.array([[1.0, 2.0, 3.0]])
+    r = toothform.generar(solido, "AB123", "U05-A", toothform.Parametros(AbrirPasillo=1, LimitX=10), "Type3", pts)
+    assert r.estado in toothform.EXPORTADOS and r.muesca is None
+    assert any("no se abre en Type3 sin PasilloEnType3" in a for a in r.avisos)
+    r = toothform.generar(solido, "AB123", "U05-A", toothform.Parametros(
+        AbrirPasillo=1, LimitX=10, PasilloEnType3=1, PasilloTolerancia=20, PasilloAltoMax=20), "Type3", pts)
+    assert any("muesca en la encía" in a and "no se comprobó la distancia a los dientes" in a for a in r.avisos)
+
+
+def test_toothform_abrir_pasillo_sin_dientes():
+    from enkukador import toothform
+
+    malla = _solido_unico()
+    p = toothform.Parametros(AbrirPasillo=1.0)
+    M, _ = toothform.marco(malla, p)
+    m = malla.copy()
+    m.apply_transform(M)
+    nueva, muesca = toothform.abrir_pasillo(m, p)  # no explota; con pasillo de sobra no hay muesca
+    assert muesca is None and nueva is m

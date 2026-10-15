@@ -867,6 +867,7 @@ const PARAMS_TF = [
     ["PasilloTolerancia", "Falta máxima a corregir", "mm", "si falta más: «Clip limit exceeded»"],
     ["PasilloAltoMax", "Alto máximo de la cuña", "mm", "si no sale de la pared antes: error"],
     ["PasilloDiente", "Distancia mínima a un diente", "mm", "más cerca: error"],
+    ["PasilloEnType3", "Abrirla también en Type3", "si", "sin dientes separados no se controla la distancia a ellos"],
   ]],
 ];
 let estandarTf = null;

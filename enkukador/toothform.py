@@ -63,6 +63,10 @@ class Parametros:
     PasilloTolerancia: float = 1.0  # como mucho LimitX - pasillo; si no, error
     PasilloAltoMax: float = 8.0  # la cuña tiene que salir de la pared antes
     PasilloDiente: float = 2.0  # distancia mínima de la muesca a un diente
+    # En Type3 no hay dientes separados y no se puede comprobar que la muesca
+    # no toque uno: por defecto no se abre. Con 1, el workflow decide abrirla
+    # igual (sin ese control; los otros límites siguen).
+    PasilloEnType3: float = 0.0
 
 
 # --- medidas fijas (BZ219-L05-A y BZ254-U05-A, iguales en los dos) ---
@@ -560,8 +564,10 @@ def abrir_pasillo(m: trimesh.Trimesh, p: Parametros) -> tuple[trimesh.Trimesh, M
     # El pasillo de antes se mide como en generar (encía cortada en z=0, con
     # los vértices nuevos del corte): es el número que se compara con ToothFORM.
     em = _cerrada(encia)
-    antes = min(pasillo_qr(_tm(em.trim_by_plane((0, 0, 1), 0.0)), p),
-                *(pasillo_qr(d, p) for d in dientes))
+    # Lista y no *args: sin dientes, min() con un solo número es TypeError
+    # (BY179 Type3 con AbrirPasillo=1, 0.3.0: 42 de 42 "Failed to preprocess").
+    antes = min([pasillo_qr(_tm(em.trim_by_plane((0, 0, 1), 0.0)), p),
+                 *(pasillo_qr(d, p) for d in dientes)])
     if antes >= p.LimitX:
         return m, None
     if p.LimitX - antes > p.PasilloTolerancia:
@@ -723,7 +729,10 @@ def generar(malla: trimesh.Trimesh, caso: str, modelo: str,
         M, curva = marco(malla, p)
         m = malla.copy()
         m.apply_transform(M)
-        if p.AbrirPasillo:
+        # En Type3 no hay dientes separados: no se puede comprobar que la muesca
+        # no toque un diente, así que no se abre salvo que el workflow lo pida
+        # con PasilloEnType3 (y entonces el pasillo queda como aviso si no).
+        if p.AbrirPasillo and (tipo != "Type3" or p.PasilloEnType3):
             m, muesca = abrir_pasillo(m, p)
         if tipo == "Type3":
             encia, dientes = encia_sola(m), trimesh.Trimesh()
@@ -769,6 +778,7 @@ def generar(malla: trimesh.Trimesh, caso: str, modelo: str,
         res.avisos.append(
             f"el pasillo de la pinza hacia el QR dejaba {muesca.pasillo_antes:.2f} mm y LimitX es {p.LimitX}: "
             f"se abrió una muesca en la encía ({muesca}); queda {muesca.pasillo_despues:.2f} mm desde z={p.PasilloPiso:g}"
+            + (" (Type3: sin dientes separados, no se comprobó la distancia a los dientes)" if tipo == "Type3" else "")
         )
     elif res.holgura_qr < p.LimitX:
         res.avisos.append(
@@ -776,6 +786,8 @@ def generar(malla: trimesh.Trimesh, caso: str, modelo: str,
             + ("al límite, ToothFORM puede aceptarlo o rechazarlo" if p.LimitX - res.holgura_qr < AL_LIMITE
                else "ToothFORM daría 'Clip limit exceeded'")
             + " (sólo aviso hasta confirmarlo con el proveedor)"
+            + ("; la muesca no se abre en Type3 sin PasilloEnType3=1: sin dientes separados no se "
+               "puede comprobar que no toque un diente" if p.AbrirPasillo and tipo == "Type3" else "")
         )
     elif res.holgura_qr - p.LimitX < AL_LIMITE:
         res.avisos.append(
