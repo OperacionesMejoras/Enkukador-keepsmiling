@@ -15,6 +15,7 @@ function guardar() {
       opciones: Object.fromEntries(["producto", "encuadre", "modo", "tipo", "sufijo", "salida", "espesor", "destino"].map((k) => [k, $("#" + k).value])),
       subcarpetas: estado.subcarpetas, registroPlegado: $("#registro-panel").classList.contains("plegado"),
       avanzado: $("#avanzado").open, paramsTf: estado.paramsTf,
+      pasos: Object.fromEntries([...document.querySelectorAll("details.paso")].map((d) => [d.dataset.paso, d.open])),
       checks: Object.fromEntries(["plantilla", "botones", "vaciar"].map((k) => [k, $("#" + k).checked])),
     }));
   } catch { /* sin almacenamiento: no pasa nada */ }
@@ -26,6 +27,37 @@ for (const [k, v] of Object.entries(guardado.checks || {})) $("#" + k).checked =
 estado.subcarpetas = guardado.subcarpetas || {};
 if (guardado.avanzado) $("#avanzado").open = true;
 estado.paramsTf = guardado.paramsTf || {};
+// Secciones plegables: recuerdan si quedaron abiertas y, cerradas, muestran un resumen.
+for (const d of document.querySelectorAll("details.paso")) {
+  if (guardado.pasos && d.dataset.paso in guardado.pasos) d.open = guardado.pasos[d.dataset.paso];
+  const r = document.createElement("span");
+  r.className = "resumen-paso";
+  d.querySelector("summary").append(r);
+  d.addEventListener("toggle", () => { resumirPasos(); guardar(); });
+}
+function resumirPasos() {
+  const r = (k) => document.querySelector(`details[data-paso=${k}] .resumen-paso`);
+  if (!r("modelos")) return;
+  const n = estado.modelos?.length || 0;
+  r("modelos").textContent = n ? `${n} modelo${n > 1 ? "s" : ""}` : "vacío";
+  r("producto").textContent = $("#producto").selectedOptions[0]?.text || "";
+  r("exportar").textContent = $("#destino").value === "caso" ? "junto a cada caso" : ($("#salida").value.trim() || "sin carpeta");
+}
+
+// --- descripción del producto elegido ---
+const DESCRIPCION = {
+  alineado: "Apoya la base en z=0 y orienta la arcada (incisivos hacia +Y). Exporta el modelo alineado.",
+  cnc2: "Alineado + chapa de 2 mm con el ID y el movimiento calados, ranuras de los extractores y marca, en un solo STL.",
+  toothform: "Lo de ToothFORM: pieza hueca para imprimir con agujeros del robot, llave, QR y texto, más ‑gum.stl, ‑tooth.ply y ‑MatA.txt para la curva de corte.",
+  cnc3: "Todavía no está hecho: exporta solo el alineado y avisa.",
+};
+function describirProducto() {
+  $("#desc-producto").textContent = DESCRIPCION[$("#producto").value] || "";
+  resumirPasos();
+}
+$("#producto").addEventListener("change", describirProducto);
+$("#destino").addEventListener("change", resumirPasos);
+$("#salida").addEventListener("change", resumirPasos);
 $("#avanzado").addEventListener("toggle", () => guardar());
 document.querySelectorAll("input, select").forEach((el) => el.addEventListener("change", guardar));
 
@@ -144,6 +176,7 @@ function quitarCarpeta(ruta) {
 }
 
 function dibujarLote() {
+  resumirPasos();
   const ul = $("#lote");
   ul.textContent = "";
   for (const c of estado.lote) {
@@ -736,6 +769,7 @@ $("#alinear-sel").onclick = () => {
 // arranque: sin carpetas precargadas; el lanzador puede pasar ?carpeta= y ?salida=
 estado.explorador = guardado.explorador;
 dibujarArbol();
+describirProducto();
 const params = new URLSearchParams(location.search);
 if (params.get("salida")) { $("#salida").value = params.get("salida"); $("#destino").value = "carpeta"; mostrarDestino(); }
 if (params.get("carpeta")) {

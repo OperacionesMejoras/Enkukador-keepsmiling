@@ -18,37 +18,24 @@
     </header>
 
     <div class="desplazable">
-      <section class="paso">
-        <h2><span class="numero">1</span> Modelos</h2>
+      <details class="paso" data-paso="modelos" open>
+        <summary><span class="numero">1</span> Modelos</summary>
         <div class="fila">
           <button id="importar" class="primario crece-boton" title="Carpetas enteras o modelos sueltos">Importar…</button>
           <button id="vaciar-lote" class="icono" title="Sacar todas las carpetas del lote">✕</button>
         </div>
         <ul id="lote"></ul>
-      </section>
+      </details>
 
-      <section class="paso">
-        <h2><span class="numero">2</span> Producto</h2>
-        <select id="producto" class="oculto" aria-hidden="true" tabindex="-1">
+      <details class="paso" data-paso="producto" open>
+        <summary><span class="numero">2</span> Producto</summary>
+        <select id="producto" aria-describedby="desc-producto">
           <option value="alineado">Solo alineado</option>
           <option value="cnc2">CNC2</option>
-          <option value="cnc3">CNC3</option>
           <option value="toothform">ToothFORM</option>
+          <option value="cnc3">CNC3 (todavía no)</option>
         </select>
-        <div class="tarjetas" data-select="producto" role="radiogroup" aria-label="Producto">
-          <button type="button" data-valor="alineado" role="radio">
-            <b>Solo alineado</b><small>Base en z=0 y arcada orientada</small>
-          </button>
-          <button type="button" data-valor="cnc2" role="radio">
-            <b>CNC2</b><small>Chapa con ID y movimiento</small>
-          </button>
-          <button type="button" data-valor="toothform" role="radio">
-            <b>ToothFORM</b><small>Impresión con QR y referencias</small>
-          </button>
-          <button type="button" data-valor="cnc3" role="radio" class="pronto">
-            <b>CNC3</b><small>Todavía no</small>
-          </button>
-        </div>
+        <p id="desc-producto" class="descripcion"></p>
         <div class="params-tf" id="fila-params-tf">
           <button type="button" id="abrir-params-tf" class="crece-boton" title="Espesor, límites de la máquina, pasillo de la pinza…">⚙ Parámetros…</button>
           <span id="estado-params-tf" class="insignia">estándar</span>
@@ -92,10 +79,10 @@
           <label class="check"><input id="botones" type="checkbox"> Etapas 0 / 00 / 00b como botones</label>
           <p class="nota">ToothFORM usa su propio marco: encuadre, modo, tipo y plantilla no cuentan.</p>
         </details>
-      </section>
+      </details>
 
-      <section class="paso">
-        <h2><span class="numero">3</span> Exportar</h2>
+      <details class="paso" data-paso="exportar" open>
+        <summary><span class="numero">3</span> Exportar</summary>
         <select id="destino" class="oculto" aria-hidden="true" tabindex="-1">
           <option value="carpeta">Una carpeta elegida</option>
           <option value="caso">Junto a cada caso</option>
@@ -112,7 +99,7 @@
           <span>Subcarpeta</span>
           <input id="subcarpeta" type="text" spellcheck="false">
         </div>
-      </section>
+      </details>
     </div>
 
     <footer class="acciones">
